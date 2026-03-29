@@ -40,6 +40,9 @@ go build -o peercast-mm .
 rtmp_port     = 1935
 peercast_port = 7144
 
+# ログレベル: "debug" | "info" | "warn" | "error"  (デフォルト: "info")
+# log_level = "info"
+
 [[yp]]
 name = "moe"
 addr = "pcp://yp.pcmoe.net/"
@@ -48,6 +51,16 @@ addr = "pcp://yp.pcmoe.net/"
 name = "local"
 addr = "pcp://localhost:7144/"
 ```
+
+### ログ
+
+ログは標準エラー出力 (stderr) に出力される。ファイルに保存したい場合はリダイレクトする。
+
+```sh
+./peercast-mm -name "テスト配信" 2>> peercast.log
+```
+
+`log_level = "debug"` にするとプロトコルの詳細 (YP への bcst 送信、PCP ハンドシェイク、下流ノードからの bcst 受信など) も出力される。
 
 ### YP を指定して起動する場合
 
@@ -76,5 +89,5 @@ peercast-mm はポート 7144 で待ち受ける。
 ChannelID は起動時のログに表示される。
 
 ```
-ChannelID:   a1b2c3d4e5f6...
+time=2026-01-01T00:00:00.000Z level=INFO msg=startup session_id=... broadcast_id=... channel_id=a1b2c3d4e5f6...
 ```
