@@ -250,8 +250,8 @@ func (s *Server) buildStatus() chanStatusResult {
 		TotalDirects:   s.ch.NumListeners(),
 		TotalRelays:    s.ch.NumRelays(),
 		IsBroadcasting: true,
-		IsRelayFull:    false,
-		IsDirectFull:   false,
+		IsRelayFull:    s.ch.IsRelayFull(s.cfg.MaxRelays),
+		IsDirectFull:   s.ch.IsDirectFull(s.cfg.MaxListeners),
 		IsReceiving:    s.ch.Buffer.HasData(),
 	}
 }
@@ -492,8 +492,8 @@ func (s *Server) getChannelRelayTree() (interface{}, *rpcError) {
 		LocalRelays:   s.ch.NumRelays(),
 		LocalDirects:  s.ch.NumListeners(),
 		IsTracker:     true,
-		IsRelayFull:   false,
-		IsDirectFull:  false,
+		IsRelayFull:   s.ch.IsRelayFull(s.cfg.MaxRelays),
+		IsDirectFull:  s.ch.IsDirectFull(s.cfg.MaxListeners),
 		IsReceiving:   s.ch.Buffer.HasData(),
 		IsControlFull: false,
 		Version:       version.PCPVersion,

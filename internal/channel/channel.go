@@ -133,6 +133,50 @@ func (c *Channel) AddOutput(o OutputStream) {
 	}
 }
 
+// TryAddOutput registers an output stream only if the relevant limit has not been reached.
+// maxRelays and maxListeners of 0 mean unlimited.
+// Returns false if the limit is already reached; the caller must close the connection.
+func (c *Channel) TryAddOutput(o OutputStream, maxRelays, maxListeners int) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	switch o.Type() {
+	case OutputStreamPCP:
+		if maxRelays > 0 && c.numRelays >= maxRelays {
+			return false
+		}
+		c.numRelays++
+	case OutputStreamHTTP:
+		if maxListeners > 0 && c.numListeners >= maxListeners {
+			return false
+		}
+		c.numListeners++
+	}
+	c.outputs = append(c.outputs, o)
+	return true
+}
+
+// IsRelayFull reports whether the relay limit has been reached.
+// Returns false when maxRelays is 0 (unlimited).
+func (c *Channel) IsRelayFull(maxRelays int) bool {
+	if maxRelays <= 0 {
+		return false
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.numRelays >= maxRelays
+}
+
+// IsDirectFull reports whether the direct listener limit has been reached.
+// Returns false when maxListeners is 0 (unlimited).
+func (c *Channel) IsDirectFull(maxListeners int) bool {
+	if maxListeners <= 0 {
+		return false
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.numListeners >= maxListeners
+}
+
 // RemoveOutput unregisters an output stream and updates the appropriate counter.
 func (c *Channel) RemoveOutput(o OutputStream) {
 	c.mu.Lock()

@@ -4,6 +4,12 @@ peercast_port = 7154
 # ログレベル: "debug" | "info" | "warn" | "error"  (デフォルト: "info")
 log_level = "debug"
 
+# 直下に接続できるリレーノード数の上限 (デフォルト: 0 = 無制限)
+# max_relays = 4
+
+# 直下に接続できる HTTP 視聴者数の上限 (デフォルト: 0 = 無制限)
+# max_listeners = 8
+
 # 複数の YP を定義しておき、起動時に -yp <name> で選択する。
 # デフォルト（-yp 省略時）は最初のエントリが使われる。
 [[yp]]

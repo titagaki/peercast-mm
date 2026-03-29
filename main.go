@@ -61,7 +61,7 @@ func main() {
 	})
 
 	// Start OutputListener.
-	listener := servent.NewListener(sessionID, ch, cfg.PeercastPort)
+	listener := servent.NewListener(sessionID, ch, cfg.PeercastPort, cfg.MaxRelays, cfg.MaxListeners)
 	go func() {
 		slog.Info("output: listening", "port", cfg.PeercastPort)
 		if err := listener.ListenAndServe(); err != nil {

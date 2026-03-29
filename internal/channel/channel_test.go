@@ -8,17 +8,23 @@ import (
 
 // mockOutput は テスト用の OutputStream スタブ。
 type mockOutput struct {
-	t OutputStreamType
+	t  OutputStreamType
+	id int
 }
 
-func (m *mockOutput) NotifyHeader() {}
-func (m *mockOutput) NotifyInfo()   {}
-func (m *mockOutput) NotifyTrack()  {}
-func (m *mockOutput) Close()        {}
-func (m *mockOutput) Type() OutputStreamType { return m.t }
+func (m *mockOutput) NotifyHeader()              {}
+func (m *mockOutput) NotifyInfo()                {}
+func (m *mockOutput) NotifyTrack()               {}
+func (m *mockOutput) Close()                     {}
+func (m *mockOutput) Type() OutputStreamType     { return m.t }
+func (m *mockOutput) ID() int                    { return m.id }
+func (m *mockOutput) RemoteAddr() string         { return "127.0.0.1:0" }
+func (m *mockOutput) SendRate() int64            { return 0 }
 
-func newPCPOut() *mockOutput  { return &mockOutput{OutputStreamPCP} }
-func newHTTPOut() *mockOutput { return &mockOutput{OutputStreamHTTP} }
+var nextMockID int
+
+func newPCPOut() *mockOutput  { nextMockID++; return &mockOutput{t: OutputStreamPCP, id: nextMockID} }
+func newHTTPOut() *mockOutput { nextMockID++; return &mockOutput{t: OutputStreamHTTP, id: nextMockID} }
 
 func newTestChannel() *Channel {
 	return New(pcp.GnuID{}, pcp.GnuID{})
@@ -99,6 +105,70 @@ func TestChannel_CloseAllResetsCounters(t *testing.T) {
 	}
 	if got := ch.NumListeners(); got != 0 {
 		t.Errorf("NumListeners after CloseAll: got %d, want 0", got)
+	}
+}
+
+// TestChannel_TryAddOutput_WithinLimit は上限内では TryAddOutput が true を返すことを確認する。
+func TestChannel_TryAddOutput_WithinLimit(t *testing.T) {
+	ch := newTestChannel()
+
+	if ok := ch.TryAddOutput(newPCPOut(), 2, 0); !ok {
+		t.Fatal("TryAddOutput: expected true for first relay")
+	}
+	if ok := ch.TryAddOutput(newPCPOut(), 2, 0); !ok {
+		t.Fatal("TryAddOutput: expected true for second relay")
+	}
+	if got := ch.NumRelays(); got != 2 {
+		t.Errorf("NumRelays: got %d, want 2", got)
+	}
+}
+
+// TestChannel_TryAddOutput_LimitReached は上限到達時に TryAddOutput が false を返し、
+// カウンタが増加しないことを確認する。
+func TestChannel_TryAddOutput_LimitReached(t *testing.T) {
+	ch := newTestChannel()
+
+	ch.TryAddOutput(newPCPOut(), 1, 0)
+
+	if ok := ch.TryAddOutput(newPCPOut(), 1, 0); ok {
+		t.Fatal("TryAddOutput: expected false when relay limit reached")
+	}
+	if got := ch.NumRelays(); got != 1 {
+		t.Errorf("NumRelays: got %d, want 1 (rejected connection must not increment counter)", got)
+	}
+}
+
+// TestChannel_TryAddOutput_Unlimited は maxRelays=0 のとき上限なしで追加できることを確認する。
+func TestChannel_TryAddOutput_Unlimited(t *testing.T) {
+	ch := newTestChannel()
+
+	for i := 0; i < 10; i++ {
+		if ok := ch.TryAddOutput(newPCPOut(), 0, 0); !ok {
+			t.Fatalf("TryAddOutput: expected true for relay %d with unlimited setting", i+1)
+		}
+	}
+	if got := ch.NumRelays(); got != 10 {
+		t.Errorf("NumRelays: got %d, want 10", got)
+	}
+}
+
+// TestChannel_IsRelayFull はリレー上限判定が正しく動作することを確認する。
+func TestChannel_IsRelayFull(t *testing.T) {
+	ch := newTestChannel()
+
+	if ch.IsRelayFull(2) {
+		t.Error("IsRelayFull: expected false when no relays connected")
+	}
+	ch.TryAddOutput(newPCPOut(), 0, 0)
+	if ch.IsRelayFull(2) {
+		t.Error("IsRelayFull: expected false when 1 of 2 slots used")
+	}
+	ch.TryAddOutput(newPCPOut(), 0, 0)
+	if !ch.IsRelayFull(2) {
+		t.Error("IsRelayFull: expected true when 2 of 2 slots used")
+	}
+	if ch.IsRelayFull(0) {
+		t.Error("IsRelayFull: expected false when maxRelays=0 (unlimited)")
 	}
 }
 

@@ -39,7 +39,13 @@ type Config struct {
 	RTMPPort     int    `toml:"rtmp_port"`
 	PeercastPort int    `toml:"peercast_port"`
 	LogLevel     string `toml:"log_level"`
-	YPs          []YP   `toml:"yp"`
+	// MaxRelays はチャンネルに直接接続できる下流リレーノード数の上限。
+	// 0 は無制限。
+	MaxRelays int `toml:"max_relays"`
+	// MaxListeners はチャンネルに直接接続できる HTTP 視聴者数の上限。
+	// 0 は無制限。
+	MaxListeners int `toml:"max_listeners"`
+	YPs          []YP `toml:"yp"`
 }
 
 func defaults() Config {

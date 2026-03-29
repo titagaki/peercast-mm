@@ -19,20 +19,25 @@ import (
 // Listener accepts incoming connections on the PeerCast port and dispatches them
 // to the appropriate output stream handler.
 type Listener struct {
-	sessionID  pcp.GnuID
-	ch         *channel.Channel
-	port       int
-	listener   net.Listener
-	nextConnID atomic.Int64
-	apiHandler http.Handler // JSON-RPC handler for POST /api/; may be nil
+	sessionID    pcp.GnuID
+	ch           *channel.Channel
+	port         int
+	maxRelays    int // 0 = unlimited
+	maxListeners int // 0 = unlimited
+	listener     net.Listener
+	nextConnID   atomic.Int64
+	apiHandler   http.Handler // JSON-RPC handler for POST /api/; may be nil
 }
 
 // NewListener creates a new Listener.
-func NewListener(sessionID pcp.GnuID, ch *channel.Channel, port int) *Listener {
+// maxRelays and maxListeners set the per-channel connection limits (0 = unlimited).
+func NewListener(sessionID pcp.GnuID, ch *channel.Channel, port, maxRelays, maxListeners int) *Listener {
 	return &Listener{
-		sessionID: sessionID,
-		ch:        ch,
-		port:      port,
+		sessionID:    sessionID,
+		ch:           ch,
+		port:         port,
+		maxRelays:    maxRelays,
+		maxListeners: maxListeners,
 	}
 }
 
@@ -80,17 +85,25 @@ func (l *Listener) handle(conn net.Conn) {
 	switch {
 	case startsWith(peek, "GET /channel/"):
 		id := int(l.nextConnID.Add(1))
-		slog.Info("pcp: relay connected", "remote", conn.RemoteAddr(), "id", id)
 		h := newPCPOutputStream(cc, br, l.sessionID, l.ch, id)
-		l.ch.AddOutput(h)
+		if !l.ch.TryAddOutput(h, l.maxRelays, l.maxListeners) {
+			slog.Info("pcp: relay rejected (relay full)", "remote", conn.RemoteAddr())
+			conn.Close()
+			return
+		}
+		slog.Info("pcp: relay connected", "remote", conn.RemoteAddr(), "id", id)
 		h.run()
 		l.ch.RemoveOutput(h)
 
 	case startsWith(peek, "GET /stream/"):
 		id := int(l.nextConnID.Add(1))
-		slog.Info("http: viewer connected", "remote", conn.RemoteAddr(), "id", id)
 		h := newHTTPOutputStream(cc, br, l.ch, id)
-		l.ch.AddOutput(h)
+		if !l.ch.TryAddOutput(h, l.maxRelays, l.maxListeners) {
+			slog.Info("http: viewer rejected (direct full)", "remote", conn.RemoteAddr())
+			conn.Close()
+			return
+		}
+		slog.Info("http: viewer connected", "remote", conn.RemoteAddr(), "id", id)
 		h.run()
 		l.ch.RemoveOutput(h)
 
