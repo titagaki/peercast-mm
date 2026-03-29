@@ -2,7 +2,7 @@ package main
 
 import (
 	"flag"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -26,22 +26,27 @@ func main() {
 	chanBitrate := flag.Uint("bitrate", 0, "Channel bitrate (kbps)")
 	flag.Parse()
 
+	// Minimal logger before config is loaded (errors only).
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+
 	if *chanName == "" {
-		log.Fatal("-name is required")
+		slog.Error("-name is required")
+		os.Exit(1)
 	}
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {
-		log.Fatalf("failed to load config: %v", err)
+		slog.Error("failed to load config", "err", err)
+		os.Exit(1)
 	}
+
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: cfg.SlogLevel()})))
 
 	sessionID := id.NewRandom()
 	broadcastID := id.NewRandom()
 	channelID := id.ChannelID(broadcastID, *chanName, *chanGenre, uint32(*chanBitrate))
 
-	log.Printf("SessionID:   %s", sessionID)
-	log.Printf("BroadcastID: %s", broadcastID)
-	log.Printf("ChannelID:   %s", channelID)
+	slog.Info("startup", "session_id", sessionID, "broadcast_id", broadcastID, "channel_id", channelID)
 
 	ch := channel.New(channelID, broadcastID)
 	ch.SetInfo(channel.ChannelInfo{
@@ -58,9 +63,9 @@ func main() {
 	// Start OutputListener.
 	listener := servent.NewListener(sessionID, ch, cfg.PeercastPort)
 	go func() {
-		log.Printf("output: listening on :%d", cfg.PeercastPort)
+		slog.Info("output: listening", "port", cfg.PeercastPort)
 		if err := listener.ListenAndServe(); err != nil {
-			log.Printf("output: listener stopped: %v", err)
+			slog.Error("output: listener stopped", "err", err)
 		}
 	}()
 
@@ -70,16 +75,17 @@ func main() {
 	// Start YPClient if configured.
 	ypEntry, err := cfg.FindYP(*ypName)
 	if err != nil {
-		log.Printf("yp: %v (skipping)", err)
+		slog.Info("yp: skipping", "reason", err)
 	} else {
 		hostPort, err := ypEntry.HostPort()
 		if err != nil {
-			log.Fatalf("yp: invalid addr %q: %v", ypEntry.Addr, err)
+			slog.Error("yp: invalid addr", "addr", ypEntry.Addr, "err", err)
+			os.Exit(1)
 		}
 		ypClient := yp.New(hostPort, sessionID, broadcastID, ch)
 		ypClientForAPI = ypClient
 		go func() {
-			log.Printf("yp: connecting to %s (%s)", ypEntry.Addr, ypEntry.Name)
+			slog.Info("yp: connecting", "addr", ypEntry.Addr, "name", ypEntry.Name)
 			ypClient.Run()
 		}()
 		defer ypClient.Stop()
@@ -88,14 +94,14 @@ func main() {
 	// Wire JSON-RPC API handler into the listener.
 	apiServer := jsonrpc.New(sessionID, ch, cfg, ypClientForAPI)
 	listener.SetAPIHandler(apiServer.Handler())
-	log.Printf("api: JSON-RPC endpoint available at POST /api/1 on :%d", cfg.PeercastPort)
+	slog.Info("api: JSON-RPC ready", "port", cfg.PeercastPort)
 
 	// Start RTMP server.
 	rtmpServer := rtmp.NewServer(ch, cfg.RTMPPort)
 	go func() {
-		log.Printf("rtmp: listening on :%d", cfg.RTMPPort)
+		slog.Info("rtmp: listening", "port", cfg.RTMPPort)
 		if err := rtmpServer.ListenAndServe(); err != nil {
-			log.Printf("rtmp: server stopped: %v", err)
+			slog.Error("rtmp: server stopped", "err", err)
 		}
 	}()
 
@@ -104,7 +110,7 @@ func main() {
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	<-sig
 
-	log.Println("shutting down...")
+	slog.Info("shutting down")
 	rtmpServer.Close()
 	listener.Close()
 	ch.CloseAll()

@@ -1,6 +1,9 @@
 rtmp_port     = 1935
 peercast_port = 7154
 
+# ログレベル: "debug" | "info" | "warn" | "error"  (デフォルト: "info")
+log_level = "debug"
+
 # 複数の YP を定義しておき、起動時に -yp <name> で選択する。
 # デフォルト（-yp 省略時）は最初のエントリが使われる。
 [[yp]]

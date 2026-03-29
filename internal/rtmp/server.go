@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 
 	goamf0 "github.com/yutopp/go-amf0"
@@ -25,7 +26,8 @@ func NewServer(ch *channel.Channel, port int) *Server {
 	s := &Server{port: port}
 	s.srv = gortmp.NewServer(&gortmp.ServerConfig{
 		OnConnect: func(conn net.Conn) (io.ReadWriteCloser, *gortmp.ConnConfig) {
-			h := newHandler(ch)
+			slog.Info("rtmp: encoder connected", "remote", conn.RemoteAddr())
+			h := newHandler(ch, conn.RemoteAddr().String())
 			return conn, &gortmp.ConnConfig{Handler: h}
 		},
 	})
@@ -52,18 +54,20 @@ func (s *Server) Close() {
 
 type handler struct {
 	gortmp.DefaultHandler
-	ch *channel.Channel
+	ch         *channel.Channel
+	remoteAddr string
 
 	// Accumulated sequence headers and metadata.
-	metaTag []byte // onMetaData FLV tag (timestamp zeroed)
-	avcTag  []byte // AVC sequence header FLV tag (timestamp zeroed)
-	aacTag  []byte // AAC sequence header FLV tag (timestamp zeroed)
+	metaTag    []byte // onMetaData FLV tag (timestamp zeroed)
+	avcTag     []byte // AVC sequence header FLV tag (timestamp zeroed)
+	aacTag     []byte // AAC sequence header FLV tag (timestamp zeroed)
+	headerSent bool   // true once the first complete header has been built
 
 	streamPos uint32 // running byte position counter
 }
 
-func newHandler(ch *channel.Channel) *handler {
-	return &handler{ch: ch}
+func newHandler(ch *channel.Channel, remoteAddr string) *handler {
+	return &handler{ch: ch, remoteAddr: remoteAddr}
 }
 
 // OnSetDataFrame handles the onMetaData AMF0 script tag.
@@ -122,7 +126,9 @@ func (h *handler) OnAudio(timestamp uint32, payload io.Reader) error {
 	return nil
 }
 
-func (h *handler) OnClose() {}
+func (h *handler) OnClose() {
+	slog.Info("rtmp: encoder disconnected", "remote", h.remoteAddr)
+}
 
 // rebuildHeader assembles the FLV head packet from accumulated sequence headers
 // and calls SetHeader on the channel if all required parts are present.
@@ -151,6 +157,10 @@ func (h *handler) rebuildHeader() {
 	}
 
 	h.ch.SetHeader(head)
+	if !h.headerSent {
+		h.headerSent = true
+		slog.Info("rtmp: stream started", "remote", h.remoteAddr)
+	}
 }
 
 func (h *handler) writeData(tag []byte, cont bool) {

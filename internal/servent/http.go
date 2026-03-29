@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -81,13 +81,15 @@ func (o *HTTPOutputStream) Close() {
 }
 
 func (o *HTTPOutputStream) run() {
+	defer slog.Info("http: viewer disconnected", "remote", o.remoteAddr, "id", o.id)
 	defer o.conn.Close()
 
 	req, err := http.ReadRequest(o.br)
 	if err != nil {
-		log.Printf("http servent: read request: %v", err)
+		slog.Debug("http: read request error", "remote", o.remoteAddr, "id", o.id, "err", err)
 		return
 	}
+	slog.Debug("http: request received", "remote", o.remoteAddr, "id", o.id, "path", req.URL.Path)
 	_ = req.Body.Close()
 
 	if !o.ch.Buffer.HasData() {

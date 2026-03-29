@@ -5,7 +5,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"sync/atomic"
@@ -80,7 +80,7 @@ func (l *Listener) handle(conn net.Conn) {
 	switch {
 	case startsWith(peek, "GET /channel/"):
 		id := int(l.nextConnID.Add(1))
-		log.Printf("servent: PCP relay connection from %s (id=%d)", conn.RemoteAddr(), id)
+		slog.Info("pcp: relay connected", "remote", conn.RemoteAddr(), "id", id)
 		h := newPCPOutputStream(cc, br, l.sessionID, l.ch, id)
 		l.ch.AddOutput(h)
 		h.run()
@@ -88,14 +88,14 @@ func (l *Listener) handle(conn net.Conn) {
 
 	case startsWith(peek, "GET /stream/"):
 		id := int(l.nextConnID.Add(1))
-		log.Printf("servent: HTTP direct connection from %s (id=%d)", conn.RemoteAddr(), id)
+		slog.Info("http: viewer connected", "remote", conn.RemoteAddr(), "id", id)
 		h := newHTTPOutputStream(cc, br, l.ch, id)
 		l.ch.AddOutput(h)
 		h.run()
 		l.ch.RemoveOutput(h)
 
 	case startsWith(peek, "pcp\n"):
-		log.Printf("servent: ping connection from %s", conn.RemoteAddr())
+		slog.Debug("servent: ping", "remote", conn.RemoteAddr())
 		handlePing(conn, br, l.sessionID)
 
 	case startsWith(peek, "POST /api"):
@@ -106,7 +106,7 @@ func (l *Listener) handle(conn net.Conn) {
 		}
 
 	default:
-		log.Printf("servent: unknown protocol from %s, closing", conn.RemoteAddr())
+		slog.Warn("servent: unknown protocol", "remote", conn.RemoteAddr())
 		conn.Close()
 	}
 }

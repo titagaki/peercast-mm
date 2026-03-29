@@ -2,8 +2,10 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"net/url"
 	"os"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 )
@@ -34,15 +36,33 @@ func (y *YP) HostPort() (string, error) {
 }
 
 type Config struct {
-	RTMPPort     int  `toml:"rtmp_port"`
-	PeercastPort int  `toml:"peercast_port"`
-	YPs          []YP `toml:"yp"`
+	RTMPPort     int    `toml:"rtmp_port"`
+	PeercastPort int    `toml:"peercast_port"`
+	LogLevel     string `toml:"log_level"`
+	YPs          []YP   `toml:"yp"`
 }
 
 func defaults() Config {
 	return Config{
 		RTMPPort:     1935,
 		PeercastPort: 7144,
+		LogLevel:     "info",
+	}
+}
+
+// SlogLevel converts the LogLevel string to a slog.Level.
+// Accepted values: "debug", "info", "warn", "error" (case-insensitive).
+// Unknown values fall back to Info.
+func (c *Config) SlogLevel() slog.Level {
+	switch strings.ToLower(c.LogLevel) {
+	case "debug":
+		return slog.LevelDebug
+	case "warn", "warning":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
 	}
 }
 

@@ -3,7 +3,7 @@ package yp
 import (
 	"encoding/binary"
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 	"time"
 
@@ -53,7 +53,7 @@ func (c *Client) Run() {
 	delay := retryInitial
 	for {
 		if err := c.run(); err != nil {
-			log.Printf("yp: connection error: %v", err)
+			slog.Error("yp: connection error", "addr", c.addr, "err", err)
 		}
 
 		select {
@@ -122,7 +122,7 @@ func (c *Client) run() error {
 	}
 
 handshakeDone:
-	log.Printf("yp: connected to %s, globalIP=%s, updateInterval=%s", c.addr, ipToString(c.globalIP), updateInterval)
+	slog.Info("yp: connected", "addr", c.addr, "global_ip", ipToString(c.globalIP), "update_interval", updateInterval)
 
 	ticker := time.NewTicker(updateInterval)
 	defer ticker.Stop()
@@ -132,20 +132,24 @@ handshakeDone:
 	if err := conn.WriteAtom(c.buildBcst()); err != nil {
 		return fmt.Errorf("write bcst: %w", err)
 	}
+	slog.Debug("yp: bcst sent", "addr", c.addr, "listeners", c.ch.NumListeners(), "relays", c.ch.NumRelays())
 
 	for {
 		select {
 		case <-c.stopCh:
 			_ = conn.WriteAtom(pcp.NewIntAtom(pcp.PCPQuit, pcp.PCPErrorQuit+pcp.PCPErrorShutdown))
+			slog.Info("yp: disconnected", "addr", c.addr)
 			return nil
 		case <-ticker.C:
 			if err := conn.WriteAtom(c.buildBcst()); err != nil {
 				return fmt.Errorf("write bcst: %w", err)
 			}
+			slog.Debug("yp: bcst sent", "addr", c.addr, "listeners", c.ch.NumListeners(), "relays", c.ch.NumRelays())
 		case <-c.bumpCh:
 			if err := conn.WriteAtom(c.buildBcst()); err != nil {
 				return fmt.Errorf("write bcst (bump): %w", err)
 			}
+			slog.Debug("yp: bcst sent (bump)", "addr", c.addr)
 		}
 	}
 }
@@ -155,6 +159,7 @@ func (c *Client) handleOleh(a *pcp.Atom) {
 	if rip != nil {
 		if v, err := rip.GetInt(); err == nil {
 			c.globalIP = v
+			slog.Debug("yp: oleh received", "addr", c.addr, "global_ip", ipToString(v))
 		}
 	}
 }

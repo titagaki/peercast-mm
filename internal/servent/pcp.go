@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
@@ -88,16 +88,18 @@ func (o *PCPOutputStream) Close() {
 }
 
 func (o *PCPOutputStream) run() {
+	defer slog.Info("pcp: relay disconnected", "remote", o.remoteAddr, "id", o.id)
 	defer o.conn.Close()
 
 	startPos, err := o.handshake()
 	if err != nil {
-		log.Printf("pcp servent: handshake error: %v", err)
+		slog.Error("pcp: handshake error", "remote", o.remoteAddr, "id", o.id, "err", err)
 		return
 	}
+	slog.Debug("pcp: handshake complete", "remote", o.remoteAddr, "id", o.id, "start_pos", startPos)
 
 	if err := o.sendInitial(); err != nil {
-		log.Printf("pcp servent: send initial error: %v", err)
+		slog.Error("pcp: send initial error", "remote", o.remoteAddr, "id", o.id, "err", err)
 		return
 	}
 
@@ -220,7 +222,7 @@ func (o *PCPOutputStream) streamLoop(reqPos uint32) {
 
 		// Check for queue stall.
 		if time.Since(lastSend) > outputQueueTimeout {
-			log.Printf("pcp servent: queue timeout, closing")
+			slog.Info("pcp: queue timeout, closing", "remote", o.remoteAddr, "id", o.id)
 			return
 		}
 
@@ -318,6 +320,7 @@ func (o *PCPOutputStream) forwardBcst(a *pcp.Atom) {
 	}
 	// We don't re-broadcast here; the Listener would fan-out.
 	// For now, silently consume.
+	slog.Debug("pcp: bcst received from downstream", "remote", o.remoteAddr, "id", o.id, "ttl", ttl)
 }
 
 func (o *PCPOutputStream) sendQuit(code uint32) {
