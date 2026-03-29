@@ -184,6 +184,8 @@ func (o *PCPOutputStream) sendInitial() error {
 func (o *PCPOutputStream) streamLoop(reqPos uint32) {
 	_, hpos := o.ch.Buffer.Header()
 	pos := hpos
+	// reqPos == 0 は「未指定」と同義に扱う。ストリーム開始直後に pos=0 を送ってくる
+	// クライアントがいても hpos == 0 のはずなので実害はない。
 	if reqPos > 0 {
 		oldest := o.ch.Buffer.OldestPos()
 		if reqPos >= oldest {

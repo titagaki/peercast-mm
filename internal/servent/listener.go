@@ -83,7 +83,7 @@ func (l *Listener) handle(conn net.Conn) {
 
 	case startsWith(peek, "pcp\n"):
 		log.Printf("servent: ping connection from %s", conn.RemoteAddr())
-		go handlePing(conn, br, l.sessionID)
+		handlePing(conn, br, l.sessionID)
 
 	default:
 		log.Printf("servent: unknown protocol from %s, closing", conn.RemoteAddr())

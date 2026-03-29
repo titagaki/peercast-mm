@@ -156,6 +156,8 @@ func (c *Channel) CloseAll() {
 	c.mu.Lock()
 	outputs := append([]OutputStream(nil), c.outputs...)
 	c.outputs = nil
+	c.numListeners = 0
+	c.numRelays = 0
 	c.mu.Unlock()
 	for _, o := range outputs {
 		o.Close()
