@@ -80,9 +80,17 @@ func (o *PCPOutputStream) handshake() (startPos uint32, err error) {
 	}
 
 	// Read "pcp\n" magic atom: 4-byte tag + 4-byte length field + 4-byte version payload.
+	// Expected: tag="pcp\n", size=4, version=1 (IPv4) or 100 (IPv6-mapped).
 	pcpMagic := make([]byte, 12)
 	if _, err := io.ReadFull(o.br, pcpMagic); err != nil {
 		return 0, fmt.Errorf("read pcp magic: %w", err)
+	}
+	if string(pcpMagic[0:4]) != "pcp\n" {
+		return 0, fmt.Errorf("pcp magic: unexpected tag %q", pcpMagic[0:4])
+	}
+	pcpVer := uint32(pcpMagic[8]) | uint32(pcpMagic[9])<<8 | uint32(pcpMagic[10])<<16 | uint32(pcpMagic[11])<<24
+	if pcpVer != 1 && pcpVer != 100 {
+		return 0, fmt.Errorf("pcp magic: unexpected version %d", pcpVer)
 	}
 
 	// Read helo.
@@ -135,11 +143,13 @@ func (o *PCPOutputStream) handshake() (startPos uint32, err error) {
 
 	// Send oleh.
 	remoteIP := ipToUint32(o.conn.RemoteAddr())
+	remotePort := portFromAddr(o.conn.RemoteAddr())
 	oleh := pcp.NewParentAtom(pcp.PCPOleh,
 		pcp.NewStringAtom(pcp.PCPHeloAgent, version.AgentName),
 		pcp.NewIDAtom(pcp.PCPHeloSessionID, o.sessionID),
 		pcp.NewIntAtom(pcp.PCPHeloVersion, version.PCPVersion),
 		pcp.NewIntAtom(pcp.PCPHeloRemoteIP, remoteIP),
+		pcp.NewShortAtom(pcp.PCPHeloPort, remotePort),
 	)
 	if err := oleh.Write(o.conn); err != nil {
 		return 0, fmt.Errorf("write oleh: %w", err)
@@ -297,9 +307,10 @@ func (o *PCPOutputStream) sendHeaderUpdate() {
 }
 
 // tryReadBcst does a non-blocking read for bcst atoms from the downstream peer.
+// o.br (not o.conn) must be used because o.br may have buffered bytes from the handshake.
 func (o *PCPOutputStream) tryReadBcst() {
 	o.conn.SetReadDeadline(time.Now().Add(1 * time.Millisecond))
-	if a, err := pcp.ReadAtom(o.conn); err == nil {
+	if a, err := pcp.ReadAtom(o.br); err == nil {
 		if a.Tag == pcp.PCPBcst {
 			o.forwardBcst(a)
 		}
@@ -383,6 +394,14 @@ func notify(ch chan struct{}) {
 	case ch <- struct{}{}:
 	default:
 	}
+}
+
+func portFromAddr(addr net.Addr) uint16 {
+	tcp, ok := addr.(*net.TCPAddr)
+	if !ok {
+		return 0
+	}
+	return uint16(tcp.Port)
 }
 
 func ipToUint32(addr net.Addr) uint32 {
