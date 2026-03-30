@@ -12,19 +12,23 @@ import (
 	"github.com/titagaki/peercast-mm/internal/channel"
 	"github.com/titagaki/peercast-mm/internal/config"
 	"github.com/titagaki/peercast-mm/internal/version"
-	"github.com/titagaki/peercast-mm/internal/yp"
 )
+
+// YPBumper is the subset of yp.Client that the JSON-RPC server needs.
+type YPBumper interface {
+	Bump()
+}
 
 // Server handles JSON-RPC 2.0 requests at POST /api/1.
 type Server struct {
 	sessionID pcp.GnuID
 	mgr       *channel.Manager
 	cfg       *config.Config
-	ypClient  *yp.Client // may be nil
+	ypClient  YPBumper // may be nil
 }
 
 // New creates a new JSON-RPC Server.
-func New(sessionID pcp.GnuID, mgr *channel.Manager, cfg *config.Config, ypClient *yp.Client) *Server {
+func New(sessionID pcp.GnuID, mgr *channel.Manager, cfg *config.Config, ypClient YPBumper) *Server {
 	return &Server{
 		sessionID: sessionID,
 		mgr:       mgr,

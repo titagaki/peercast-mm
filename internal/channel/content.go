@@ -12,12 +12,50 @@ type Content struct {
 }
 
 // ContentBuffer holds the stream header and a fixed-size ring buffer of data packets.
+// It provides a Signal channel that is closed when new data arrives, allowing
+// consumers to wait for data without polling.
 type ContentBuffer struct {
-	mu      sync.RWMutex
-	header  []byte
+	mu        sync.RWMutex
+	header    []byte
 	headerPos uint32
-	packets [ContentBufferSize]Content
-	count   int // total packets written (used to compute ring positions)
+	packets   [ContentBufferSize]Content
+	count     int // total packets written (used to compute ring positions)
+
+	sigOnce sync.Once
+	sigMu   sync.Mutex
+	sigCh   chan struct{} // closed on each Write; replaced with a new channel
+}
+
+func (b *ContentBuffer) initSig() {
+	b.sigOnce.Do(func() {
+		b.sigCh = make(chan struct{})
+	})
+}
+
+// Signal returns a channel that will be closed when new data is written.
+// Callers should obtain this channel before checking Since() to avoid races:
+//
+//	sigCh := buf.Signal()
+//	packets := buf.Since(pos)
+//	if len(packets) == 0 {
+//	    <-sigCh // blocks until next Write
+//	}
+func (b *ContentBuffer) Signal() <-chan struct{} {
+	b.initSig()
+	b.sigMu.Lock()
+	defer b.sigMu.Unlock()
+	return b.sigCh
+}
+
+// notifyWrite closes the current signal channel and replaces it, waking all
+// goroutines blocked on Signal().
+func (b *ContentBuffer) notifyWrite() {
+	b.initSig()
+	b.sigMu.Lock()
+	old := b.sigCh
+	b.sigCh = make(chan struct{})
+	b.sigMu.Unlock()
+	close(old)
 }
 
 // SetHeader updates the stream header.
@@ -32,14 +70,15 @@ func (b *ContentBuffer) SetHeader(data []byte) {
 	b.header = cp
 }
 
-// Write appends a data packet.
+// Write appends a data packet and wakes all goroutines waiting on Signal().
 func (b *ContentBuffer) Write(data []byte, pos uint32, cont bool) {
 	b.mu.Lock()
-	defer b.mu.Unlock()
 	cp := make([]byte, len(data))
 	copy(cp, data)
 	b.packets[b.count%ContentBufferSize] = Content{Pos: pos, Data: cp, Cont: cont}
 	b.count++
+	b.mu.Unlock()
+	b.notifyWrite()
 }
 
 // Header returns the current stream header and its position.

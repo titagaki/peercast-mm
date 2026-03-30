@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"log/slog"
 	"os"
@@ -32,6 +33,10 @@ func main() {
 
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: cfg.SlogLevel()})))
 
+	// Create a context that is cancelled on SIGINT/SIGTERM.
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
 	sessionID := id.NewRandom()
 	broadcastID := id.NewRandom()
 
@@ -52,8 +57,8 @@ func main() {
 		}
 	}()
 
-	// JSON-RPC API will be wired after YP setup (ypClient may be nil).
-	var ypClientForAPI *yp.Client
+	// JSON-RPC API will be wired after YP setup (ypBumper may be nil).
+	var ypBumper jsonrpc.YPBumper
 
 	// Start YPClient if configured.
 	ypEntry, err := cfg.FindYP(*ypName)
@@ -66,7 +71,7 @@ func main() {
 			os.Exit(1)
 		}
 		ypClient := yp.New(hostPort, sessionID, broadcastID, mgr, cfg.PeercastPort)
-		ypClientForAPI = ypClient
+		ypBumper = ypClient
 		go func() {
 			slog.Info("yp: connecting", "addr", ypEntry.Addr, "name", ypEntry.Name)
 			ypClient.Run()
@@ -75,7 +80,7 @@ func main() {
 	}
 
 	// Wire JSON-RPC API handler into the listener.
-	apiServer := jsonrpc.New(sessionID, mgr, cfg, ypClientForAPI)
+	apiServer := jsonrpc.New(sessionID, mgr, cfg, ypBumper)
 	listener.SetAPIHandler(apiServer.Handler())
 	slog.Info("api: JSON-RPC ready", "port", cfg.PeercastPort)
 
@@ -92,10 +97,8 @@ func main() {
 		}
 	}()
 
-	// Wait for interrupt.
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
-	<-sig
+	// Wait for shutdown signal.
+	<-ctx.Done()
 
 	slog.Info("shutting down")
 	rtmpServer.Close()

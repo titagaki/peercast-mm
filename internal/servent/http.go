@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/titagaki/peercast-mm/internal/channel"
@@ -15,70 +14,27 @@ import (
 
 const (
 	directWriteTimeout = 60 * time.Second
-	httpPollInterval   = 200 * time.Millisecond
 )
 
 // HTTPOutputStream sends raw FLV data to a media player over HTTP.
 type HTTPOutputStream struct {
-	conn       *countingConn
-	br         *bufio.Reader
-	ch         *channel.Channel
-	id         int
-	remoteAddr string
-
-	mu       sync.Mutex
-	closed   bool
-	headerCh chan struct{}
-	infoCh   chan struct{}
-	trackCh  chan struct{}
-	closeCh  chan struct{}
+	outputBase
+	br *bufio.Reader
+	ch *channel.Channel
 }
 
 func newHTTPOutputStream(conn *countingConn, br *bufio.Reader, ch *channel.Channel, id int) *HTTPOutputStream {
-	return &HTTPOutputStream{
-		conn:       conn,
+	o := &HTTPOutputStream{
+		outputBase: newOutputBase(conn, id),
 		br:         br,
 		ch:         ch,
-		id:         id,
-		remoteAddr: conn.RemoteAddr().String(),
-		headerCh:   make(chan struct{}, 1),
-		infoCh:     make(chan struct{}, 1),
-		trackCh:    make(chan struct{}, 1),
-		closeCh:    make(chan struct{}),
 	}
+	o.onClose = func() { conn.Close() }
+	return o
 }
 
 // Type implements channel.OutputStream.
 func (o *HTTPOutputStream) Type() channel.OutputStreamType { return channel.OutputStreamHTTP }
-
-// ID implements channel.OutputStream.
-func (o *HTTPOutputStream) ID() int { return o.id }
-
-// RemoteAddr implements channel.OutputStream.
-func (o *HTTPOutputStream) RemoteAddr() string { return o.remoteAddr }
-
-// SendRate implements channel.OutputStream.
-func (o *HTTPOutputStream) SendRate() int64 { return o.conn.sent.rate() }
-
-// NotifyHeader implements channel.OutputStream.
-func (o *HTTPOutputStream) NotifyHeader() { notify(o.headerCh) }
-
-// NotifyInfo implements channel.OutputStream.
-func (o *HTTPOutputStream) NotifyInfo() { notify(o.infoCh) }
-
-// NotifyTrack implements channel.OutputStream.
-func (o *HTTPOutputStream) NotifyTrack() { notify(o.trackCh) }
-
-// Close implements channel.OutputStream.
-func (o *HTTPOutputStream) Close() {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	if !o.closed {
-		o.closed = true
-		close(o.closeCh)
-		o.conn.Close()
-	}
-}
 
 func (o *HTTPOutputStream) run() {
 	defer slog.Info("http: viewer disconnected", "remote", o.remoteAddr, "id", o.id)
@@ -129,21 +85,20 @@ func (o *HTTPOutputStream) run() {
 	waitingForKeyframe := true
 
 	for {
-		select {
-		case <-o.closeCh:
-			return
-		default:
-		}
-
+		sigCh := o.ch.Buffer.Signal()
 		packets := o.ch.Buffer.Since(pos)
+
 		if len(packets) == 0 {
-			time.Sleep(httpPollInterval)
-			continue
+			select {
+			case <-o.closeCh:
+				return
+			case <-sigCh:
+				continue
+			}
 		}
 
 		for _, pkt := range packets {
 			if waitingForKeyframe && pkt.Cont {
-				// Skip until we find a keyframe (cont=false).
 				pos = pkt.Pos + uint32(len(pkt.Data))
 				continue
 			}

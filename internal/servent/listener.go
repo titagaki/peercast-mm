@@ -17,11 +17,16 @@ import (
 	"github.com/titagaki/peercast-mm/internal/version"
 )
 
+// ChannelStore provides channel lookup by ID.
+type ChannelStore interface {
+	GetByID(channelID pcp.GnuID) (*channel.Channel, bool)
+}
+
 // Listener accepts incoming connections on the PeerCast port and dispatches them
 // to the appropriate output stream handler.
 type Listener struct {
 	sessionID    pcp.GnuID
-	mgr          *channel.Manager
+	mgr          ChannelStore
 	port         int
 	maxRelays    int // 0 = unlimited
 	maxListeners int // 0 = unlimited
@@ -32,7 +37,7 @@ type Listener struct {
 
 // NewListener creates a new Listener.
 // maxRelays and maxListeners set the per-channel connection limits (0 = unlimited).
-func NewListener(sessionID pcp.GnuID, mgr *channel.Manager, port, maxRelays, maxListeners int) *Listener {
+func NewListener(sessionID pcp.GnuID, mgr ChannelStore, port, maxRelays, maxListeners int) *Listener {
 	return &Listener{
 		sessionID:    sessionID,
 		mgr:          mgr,
@@ -99,57 +104,12 @@ func (l *Listener) handle(conn net.Conn) {
 
 	switch {
 	case startsWith(peek, "GET /channel/"):
-		channelID, ok := parseChannelIDFromPath(peek, "/channel/")
-		if !ok {
-			slog.Warn("pcp: bad channel path", "remote", conn.RemoteAddr())
-			conn.Close()
-			return
-		}
-		ch, ok := l.mgr.GetByID(channelID)
-		if !ok {
-			slog.Info("pcp: channel not found", "remote", conn.RemoteAddr(), "id", hex.EncodeToString(channelID[:]))
-			conn.Close()
-			return
-		}
-		id := int(l.nextConnID.Add(1))
-		h := newPCPOutputStream(cc, br, l.sessionID, ch, id)
-		if !ch.TryAddOutput(h, l.maxRelays, l.maxListeners) {
-			slog.Info("pcp: relay rejected (relay full)", "remote", conn.RemoteAddr())
-			conn.Close()
-			return
-		}
-		slog.Info("pcp: relay connected", "remote", conn.RemoteAddr(), "id", id)
-		h.run()
-		ch.RemoveOutput(h)
-
+		l.handlePCPRelay(cc, br, peek)
 	case startsWith(peek, "GET /stream/"):
-		channelID, ok := parseChannelIDFromPath(peek, "/stream/")
-		if !ok {
-			slog.Warn("http: bad stream path", "remote", conn.RemoteAddr())
-			conn.Close()
-			return
-		}
-		ch, ok := l.mgr.GetByID(channelID)
-		if !ok {
-			slog.Info("http: channel not found", "remote", conn.RemoteAddr(), "id", hex.EncodeToString(channelID[:]))
-			conn.Close()
-			return
-		}
-		id := int(l.nextConnID.Add(1))
-		h := newHTTPOutputStream(cc, br, ch, id)
-		if !ch.TryAddOutput(h, l.maxRelays, l.maxListeners) {
-			slog.Info("http: viewer rejected (direct full)", "remote", conn.RemoteAddr())
-			conn.Close()
-			return
-		}
-		slog.Info("http: viewer connected", "remote", conn.RemoteAddr(), "id", id)
-		h.run()
-		ch.RemoveOutput(h)
-
+		l.handleHTTPStream(cc, br, peek)
 	case startsWith(peek, "pcp\n"):
 		slog.Debug("servent: ping", "remote", conn.RemoteAddr())
 		handlePing(conn, br, l.sessionID)
-
 	case startsWith(peek, "POST /api"):
 		if l.apiHandler != nil {
 			l.handleAPIRequest(conn, br)
@@ -161,6 +121,56 @@ func (l *Listener) handle(conn net.Conn) {
 		slog.Warn("servent: unknown protocol", "remote", conn.RemoteAddr())
 		conn.Close()
 	}
+}
+
+func (l *Listener) handlePCPRelay(cc *countingConn, br *bufio.Reader, peek []byte) {
+	channelID, ok := parseChannelIDFromPath(peek, "/channel/")
+	if !ok {
+		slog.Warn("pcp: bad channel path", "remote", cc.RemoteAddr())
+		cc.Close()
+		return
+	}
+	ch, ok := l.mgr.GetByID(channelID)
+	if !ok {
+		slog.Info("pcp: channel not found", "remote", cc.RemoteAddr(), "id", hex.EncodeToString(channelID[:]))
+		cc.Close()
+		return
+	}
+	id := int(l.nextConnID.Add(1))
+	h := newPCPOutputStream(cc, br, l.sessionID, ch, id)
+	if !ch.TryAddOutput(h, l.maxRelays, l.maxListeners) {
+		slog.Info("pcp: relay rejected (relay full)", "remote", cc.RemoteAddr())
+		cc.Close()
+		return
+	}
+	slog.Info("pcp: relay connected", "remote", cc.RemoteAddr(), "id", id)
+	h.run()
+	ch.RemoveOutput(h)
+}
+
+func (l *Listener) handleHTTPStream(cc *countingConn, br *bufio.Reader, peek []byte) {
+	channelID, ok := parseChannelIDFromPath(peek, "/stream/")
+	if !ok {
+		slog.Warn("http: bad stream path", "remote", cc.RemoteAddr())
+		cc.Close()
+		return
+	}
+	ch, ok := l.mgr.GetByID(channelID)
+	if !ok {
+		slog.Info("http: channel not found", "remote", cc.RemoteAddr(), "id", hex.EncodeToString(channelID[:]))
+		cc.Close()
+		return
+	}
+	id := int(l.nextConnID.Add(1))
+	h := newHTTPOutputStream(cc, br, ch, id)
+	if !ch.TryAddOutput(h, l.maxRelays, l.maxListeners) {
+		slog.Info("http: viewer rejected (direct full)", "remote", cc.RemoteAddr())
+		cc.Close()
+		return
+	}
+	slog.Info("http: viewer connected", "remote", cc.RemoteAddr(), "id", id)
+	h.run()
+	ch.RemoveOutput(h)
 }
 
 func startsWith(data []byte, prefix string) bool {

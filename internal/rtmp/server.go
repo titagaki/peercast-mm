@@ -12,8 +12,17 @@ import (
 	gortmp "github.com/yutopp/go-rtmp"
 	"github.com/yutopp/go-rtmp/message"
 
+	"github.com/titagaki/peercast-pcp/pcp"
+
 	"github.com/titagaki/peercast-mm/internal/channel"
 )
+
+// ChannelManager is the subset of channel.Manager that the RTMP server needs.
+type ChannelManager interface {
+	IsIssuedKey(key string) bool
+	GetByStreamKey(key string) (*channel.Channel, bool)
+	Stop(channelID pcp.GnuID) bool
+}
 
 // Server listens for RTMP push connections from an encoder.
 type Server struct {
@@ -26,7 +35,7 @@ type Server struct {
 // managed by mgr. Each encoder connection must publish with a stream key that
 // was previously issued via mgr.IssueStreamKey(); otherwise the connection is
 // rejected in OnPublish.
-func NewServer(mgr *channel.Manager, port int) *Server {
+func NewServer(mgr ChannelManager, port int) *Server {
 	s := &Server{port: port}
 	s.srv = gortmp.NewServer(&gortmp.ServerConfig{
 		OnConnect: func(conn net.Conn) (io.ReadWriteCloser, *gortmp.ConnConfig) {
@@ -72,7 +81,7 @@ func (s *Server) Close() {
 
 type handler struct {
 	gortmp.DefaultHandler
-	mgr        *channel.Manager
+	mgr        ChannelManager
 	remoteAddr string
 	streamKey  string // set in OnPublish; empty until then
 
@@ -85,7 +94,7 @@ type handler struct {
 	streamPos uint32 // running byte position counter
 }
 
-func newHandler(mgr *channel.Manager, remoteAddr string) *handler {
+func newHandler(mgr ChannelManager, remoteAddr string) *handler {
 	return &handler{mgr: mgr, remoteAddr: remoteAddr}
 }
 

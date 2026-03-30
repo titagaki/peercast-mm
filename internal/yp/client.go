@@ -21,13 +21,18 @@ const (
 	defaultInterval = 120 * time.Second
 )
 
+// ChannelLister provides a list of active channels for YP announcement.
+type ChannelLister interface {
+	List() []*channel.Channel
+}
+
 // Client maintains a PCP COUT connection to a YP (root server).
 // It announces all channels currently active in the manager.
 type Client struct {
 	addr        string
 	sessionID   pcp.GnuID
 	broadcastID pcp.GnuID
-	mgr         *channel.Manager
+	mgr         ChannelLister
 	listenPort  uint16
 
 	globalIP uint32 // learned from oleh.rip
@@ -37,7 +42,7 @@ type Client struct {
 }
 
 // New creates a new YPClient.
-func New(addr string, sessionID, broadcastID pcp.GnuID, mgr *channel.Manager, listenPort int) *Client {
+func New(addr string, sessionID, broadcastID pcp.GnuID, mgr ChannelLister, listenPort int) *Client {
 	if listenPort <= 0 {
 		listenPort = defaultPCPPort
 	}

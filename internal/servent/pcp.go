@@ -8,8 +8,6 @@ import (
 	"net"
 	"net/http"
 	"strconv"
-	"strings"
-	"sync"
 	"time"
 
 	"github.com/titagaki/peercast-pcp/pcp"
@@ -21,71 +19,27 @@ import (
 const (
 	outputQueueTimeout = 5 * time.Second
 	pcpWriteTimeout    = 10 * time.Second
-	pollInterval       = 50 * time.Millisecond
 )
 
 // PCPOutputStream sends PCP stream data to a downstream relay node.
 type PCPOutputStream struct {
-	conn       *countingConn
-	br         *bufio.Reader
-	sessionID  pcp.GnuID
-	ch         *channel.Channel
-	id         int
-	remoteAddr string
-
-	mu       sync.Mutex
-	closed   bool
-	headerCh chan struct{}
-	infoCh   chan struct{}
-	trackCh  chan struct{}
-	closeCh  chan struct{}
+	outputBase
+	br        *bufio.Reader
+	sessionID pcp.GnuID
+	ch        *channel.Channel
 }
 
 func newPCPOutputStream(conn *countingConn, br *bufio.Reader, sessionID pcp.GnuID, ch *channel.Channel, id int) *PCPOutputStream {
 	return &PCPOutputStream{
-		conn:       conn,
+		outputBase: newOutputBase(conn, id),
 		br:         br,
 		sessionID:  sessionID,
 		ch:         ch,
-		id:         id,
-		remoteAddr: conn.RemoteAddr().String(),
-		headerCh:   make(chan struct{}, 1),
-		infoCh:     make(chan struct{}, 1),
-		trackCh:    make(chan struct{}, 1),
-		closeCh:    make(chan struct{}),
 	}
 }
 
 // Type implements channel.OutputStream.
 func (o *PCPOutputStream) Type() channel.OutputStreamType { return channel.OutputStreamPCP }
-
-// ID implements channel.OutputStream.
-func (o *PCPOutputStream) ID() int { return o.id }
-
-// RemoteAddr implements channel.OutputStream.
-func (o *PCPOutputStream) RemoteAddr() string { return o.remoteAddr }
-
-// SendRate implements channel.OutputStream.
-func (o *PCPOutputStream) SendRate() int64 { return o.conn.sent.rate() }
-
-// NotifyHeader implements channel.OutputStream.
-func (o *PCPOutputStream) NotifyHeader() { notify(o.headerCh) }
-
-// NotifyInfo implements channel.OutputStream.
-func (o *PCPOutputStream) NotifyInfo() { notify(o.infoCh) }
-
-// NotifyTrack implements channel.OutputStream.
-func (o *PCPOutputStream) NotifyTrack() { notify(o.trackCh) }
-
-// Close implements channel.OutputStream.
-func (o *PCPOutputStream) Close() {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	if !o.closed {
-		o.closed = true
-		close(o.closeCh)
-	}
-}
 
 func (o *PCPOutputStream) run() {
 	defer slog.Info("pcp: relay disconnected", "remote", o.remoteAddr, "id", o.id)
@@ -210,105 +164,127 @@ func (o *PCPOutputStream) streamLoop(reqPos uint32) {
 		}
 	}
 
-	lastSend := time.Now()
+	stallTimer := time.NewTimer(outputQueueTimeout)
+	defer stallTimer.Stop()
 	waitingForKeyframe := true
 
 	for {
+		// Drain incoming atoms from the peer (bcst forwarding).
+		o.tryReadBcst()
+
+		// Process notifications non-blockingly.
+		o.drainNotifications()
+
+		// Send buffered data packets.
+		sigCh := o.ch.Buffer.Signal()
+		packets := o.ch.Buffer.Since(pos)
+
+		if len(packets) > 0 {
+			for _, pkt := range packets {
+				if waitingForKeyframe && pkt.Cont {
+					pos = pkt.Pos + uint32(len(pkt.Data))
+					continue
+				}
+				waitingForKeyframe = false
+
+				cont := byte(0)
+				if pkt.Cont {
+					cont = 1
+				}
+				pktAtom := pcp.NewParentAtom(pcp.PCPChanPkt,
+					pcp.NewID4Atom(pcp.PCPChanPktType, pcp.NewID4("data")),
+					pcp.NewIntAtom(pcp.PCPChanPktPos, pkt.Pos),
+					pcp.NewBytesAtom(pcp.PCPChanPktData, pkt.Data),
+					pcp.NewByteAtom(pcp.PCPChanPktContinuation, cont),
+				)
+				atom := pcp.NewParentAtom(pcp.PCPChan,
+					pcp.NewIDAtom(pcp.PCPChanID, o.ch.ID),
+					pktAtom,
+				)
+				o.conn.SetWriteDeadline(time.Now().Add(pcpWriteTimeout))
+				if err := atom.Write(o.conn); err != nil {
+					return
+				}
+				o.conn.SetWriteDeadline(time.Time{})
+				pos = pkt.Pos + uint32(len(pkt.Data))
+			}
+			stallTimer.Reset(outputQueueTimeout)
+			continue
+		}
+
+		// No data available — block until an event arrives.
 		select {
 		case <-o.closeCh:
 			o.sendQuit(pcp.PCPErrorQuit + pcp.PCPErrorShutdown)
 			return
-		default:
-		}
-
-		// Check for queue stall.
-		if time.Since(lastSend) > outputQueueTimeout {
+		case <-sigCh:
+			// New data written to buffer.
+		case <-o.infoCh:
+			o.sendInfoUpdate()
+		case <-o.trackCh:
+			o.sendTrackUpdate()
+		case <-o.headerCh:
+			o.sendHeaderUpdate()
+		case <-stallTimer.C:
 			slog.Info("pcp: queue timeout, closing", "remote", o.remoteAddr, "id", o.id)
 			return
 		}
+	}
+}
 
-		// Drain incoming atoms from the peer (bcst forwarding).
-		o.conn.SetReadDeadline(time.Now().Add(1 * time.Millisecond))
-		if a, err := pcp.ReadAtom(o.conn); err == nil {
-			if a.Tag == pcp.PCPBcst {
-				o.forwardBcst(a)
-			}
-		}
-		o.conn.SetReadDeadline(time.Time{})
-
-		// Handle notifications.
+// drainNotifications processes any pending info/track/header notifications
+// without blocking.
+func (o *PCPOutputStream) drainNotifications() {
+	for {
 		select {
 		case <-o.infoCh:
-			info := o.ch.Info()
-			chanInfo := buildChanInfoAtom(info)
-			atom := pcp.NewParentAtom(pcp.PCPChan,
-				pcp.NewIDAtom(pcp.PCPChanID, o.ch.ID),
-				chanInfo,
-			)
-			atom.Write(o.conn)
-		default:
-		}
-		select {
+			o.sendInfoUpdate()
 		case <-o.trackCh:
-			track := o.ch.Track()
-			chanTrack := buildChanTrackAtom(track)
-			atom := pcp.NewParentAtom(pcp.PCPChan,
-				pcp.NewIDAtom(pcp.PCPChanID, o.ch.ID),
-				chanTrack,
-			)
-			atom.Write(o.conn)
-		default:
-		}
-		select {
+			o.sendTrackUpdate()
 		case <-o.headerCh:
-			header, hpos := o.ch.Buffer.Header()
-			pktAtom := buildPktHeadAtom(header, hpos)
-			atom := pcp.NewParentAtom(pcp.PCPChan,
-				pcp.NewIDAtom(pcp.PCPChanID, o.ch.ID),
-				pktAtom,
-			)
-			atom.Write(o.conn)
+			o.sendHeaderUpdate()
 		default:
-		}
-
-		// Send buffered data packets.
-		packets := o.ch.Buffer.Since(pos)
-		if len(packets) == 0 {
-			time.Sleep(pollInterval)
-			continue
-		}
-
-		for _, pkt := range packets {
-			if waitingForKeyframe && pkt.Cont {
-				// Skip continuation packets until the first keyframe.
-				pos = pkt.Pos + uint32(len(pkt.Data))
-				continue
-			}
-			waitingForKeyframe = false
-
-			cont := byte(0)
-			if pkt.Cont {
-				cont = 1
-			}
-			pktAtom := pcp.NewParentAtom(pcp.PCPChanPkt,
-				pcp.NewID4Atom(pcp.PCPChanPktType, pcp.NewID4("data")),
-				pcp.NewIntAtom(pcp.PCPChanPktPos, pkt.Pos),
-				pcp.NewBytesAtom(pcp.PCPChanPktData, pkt.Data),
-				pcp.NewByteAtom(pcp.PCPChanPktContinuation, cont),
-			)
-			atom := pcp.NewParentAtom(pcp.PCPChan,
-				pcp.NewIDAtom(pcp.PCPChanID, o.ch.ID),
-				pktAtom,
-			)
-			o.conn.SetWriteDeadline(time.Now().Add(pcpWriteTimeout))
-			if err := atom.Write(o.conn); err != nil {
-				return
-			}
-			o.conn.SetWriteDeadline(time.Time{})
-			pos = pkt.Pos + uint32(len(pkt.Data))
-			lastSend = time.Now()
+			return
 		}
 	}
+}
+
+func (o *PCPOutputStream) sendInfoUpdate() {
+	info := o.ch.Info()
+	atom := pcp.NewParentAtom(pcp.PCPChan,
+		pcp.NewIDAtom(pcp.PCPChanID, o.ch.ID),
+		buildChanInfoAtom(info),
+	)
+	atom.Write(o.conn)
+}
+
+func (o *PCPOutputStream) sendTrackUpdate() {
+	track := o.ch.Track()
+	atom := pcp.NewParentAtom(pcp.PCPChan,
+		pcp.NewIDAtom(pcp.PCPChanID, o.ch.ID),
+		buildChanTrackAtom(track),
+	)
+	atom.Write(o.conn)
+}
+
+func (o *PCPOutputStream) sendHeaderUpdate() {
+	header, hpos := o.ch.Buffer.Header()
+	atom := pcp.NewParentAtom(pcp.PCPChan,
+		pcp.NewIDAtom(pcp.PCPChanID, o.ch.ID),
+		buildPktHeadAtom(header, hpos),
+	)
+	atom.Write(o.conn)
+}
+
+// tryReadBcst does a non-blocking read for bcst atoms from the downstream peer.
+func (o *PCPOutputStream) tryReadBcst() {
+	o.conn.SetReadDeadline(time.Now().Add(1 * time.Millisecond))
+	if a, err := pcp.ReadAtom(o.conn); err == nil {
+		if a.Tag == pcp.PCPBcst {
+			o.forwardBcst(a)
+		}
+	}
+	o.conn.SetReadDeadline(time.Time{})
 }
 
 func (o *PCPOutputStream) forwardBcst(a *pcp.Atom) {
@@ -400,6 +376,3 @@ func ipToUint32(addr net.Addr) uint32 {
 	}
 	return uint32(ip[0])<<24 | uint32(ip[1])<<16 | uint32(ip[2])<<8 | uint32(ip[3])
 }
-
-// ensure unused import doesn't cause errors
-var _ = strings.NewReader
