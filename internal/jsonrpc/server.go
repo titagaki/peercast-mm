@@ -576,7 +576,6 @@ type ypEntry struct {
 	Name         string `json:"name"`
 	URI          string `json:"uri"`
 	AnnounceURI  string `json:"announceUri"`
-	ChannelCount int    `json:"channelCount"`
 }
 
 func (s *Server) getYellowPages() (interface{}, *rpcError) {
@@ -586,16 +585,11 @@ func (s *Server) getYellowPages() (interface{}, *rpcError) {
 		if !strings.Contains(uri, "://") {
 			uri = "pcp://" + uri + "/"
 		}
-		count := 0
-		if s.ypClient != nil {
-			count = len(s.mgr.List())
-		}
 		result[i] = ypEntry{
 			YellowPageID: i,
 			Name:         entry.Name,
 			URI:          uri,
 			AnnounceURI:  uri,
-			ChannelCount: count,
 		}
 	}
 	return result, nil

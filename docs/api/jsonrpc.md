@@ -406,8 +406,7 @@ YP への bcst を即時送信する（`YPClient.Bump()`）。YP 未設定の場
     "yellowPageId": 0,
     "name": "0yp",
     "uri": "pcp://yayaue.me/",
-    "announceUri": "pcp://yayaue.me/",
-    "channelCount": 1
+    "announceUri": "pcp://yayaue.me/"
   }
 ]
 ```
@@ -417,7 +416,6 @@ YP への bcst を即時送信する（`YPClient.Bump()`）。YP 未設定の場
 | `yellowPageId` | config.toml の `[[yp]]` エントリの 0 始まりインデックス |
 | `name` | `[[yp]].name` |
 | `uri` / `announceUri` | `[[yp]].addr`（`pcp://` スキームがなければ自動付与） |
-| `channelCount` | YPClient が起動している場合は `1`、未設定の場合は `0` |
 
 ---
 
@@ -489,7 +487,6 @@ YP への bcst を即時送信する（`YPClient.Bump()`）。YP 未設定の場
 - `channelId` の照合は大文字・小文字を区別しない。
 - `getChannelStatus.status` は `"Receiving"` (データ受信中) または `"Idle"` (未受信)。
 - `getChannelConnections` の `recvRate` は常に `0`（受信レートの計測は未実装）。
-- `getYellowPages` の `channelCount` はアクティブなチャンネル数（`Manager.List()` の件数）を返す。ブロードキャスト・リレー合算。
 - `getChannelRelayTree` の `address` は空文字列（グローバル IP 未取得）。
 - `relayChannel` は返却直後に上流への接続が完了していない場合がある。`getChannelStatus.isReceiving` で確認する。
 - リレーチャンネルでも `bumpChannel` は機能する（YP への bcst が送信される）。
