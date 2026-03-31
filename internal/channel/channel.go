@@ -64,12 +64,13 @@ type Channel struct {
 	numRelays      int // PCPOutputStream の数
 }
 
-// New creates a new Channel.
-func New(id, broadcastID pcp.GnuID) *Channel {
+// New creates a new Channel. bufSize sets the ContentBuffer ring buffer size;
+// if <= 0, DefaultContentBufferSize is used.
+func New(id, broadcastID pcp.GnuID, bufSize int) *Channel {
 	return &Channel{
 		ID:          id,
 		broadcastID: broadcastID,
-		Buffer:      &ContentBuffer{},
+		Buffer:      NewContentBuffer(bufSize),
 		StartTime:   time.Now(),
 	}
 }

@@ -2,7 +2,30 @@ package channel
 
 import "sync"
 
-const ContentBufferSize = 64
+const DefaultContentBufferSize = 64
+
+// DefaultContentBufferSeconds is the default duration the ring buffer covers.
+const DefaultContentBufferSeconds = 8.0
+
+// pcpPacketSize is the approximate size of a single PCP data packet in bytes.
+const pcpPacketSize = 15 * 1024
+
+// ContentBufferSizeForBitrate computes the number of ring buffer packets
+// needed to hold the given number of seconds at the specified bitrate.
+// If bitrateKbps is 0 or seconds is <= 0, DefaultContentBufferSize is returned.
+// The result is clamped to a minimum of DefaultContentBufferSize.
+func ContentBufferSizeForBitrate(bitrateKbps uint32, seconds float64) int {
+	if bitrateKbps == 0 || seconds <= 0 {
+		return DefaultContentBufferSize
+	}
+	bytesPerSec := float64(bitrateKbps) * 1000 / 8
+	totalBytes := bytesPerSec * seconds
+	packets := int(totalBytes/pcpPacketSize) + 1
+	if packets < DefaultContentBufferSize {
+		packets = DefaultContentBufferSize
+	}
+	return packets
+}
 
 // Content is a single stream data packet.
 type Content struct {
@@ -11,19 +34,30 @@ type Content struct {
 	ContFlags byte // PeerCastStation 互換ビットフラグ (0x00=None, 0x01=Fragment, 0x02=InterFrame, 0x04=AudioFrame)
 }
 
-// ContentBuffer holds the stream header and a fixed-size ring buffer of data packets.
+// ContentBuffer holds the stream header and a configurable-size ring buffer of data packets.
 // It provides a Signal channel that is closed when new data arrives, allowing
 // consumers to wait for data without polling.
 type ContentBuffer struct {
 	mu        sync.RWMutex
 	header    []byte
 	headerPos uint32
-	packets   [ContentBufferSize]Content
+	packets   []Content
 	count     int // total packets written (used to compute ring positions)
 
 	sigOnce sync.Once
 	sigMu   sync.Mutex
 	sigCh   chan struct{} // closed on each Write; replaced with a new channel
+}
+
+// NewContentBuffer creates a ContentBuffer with the given ring buffer size.
+// If size <= 0, DefaultContentBufferSize is used.
+func NewContentBuffer(size int) *ContentBuffer {
+	if size <= 0 {
+		size = DefaultContentBufferSize
+	}
+	return &ContentBuffer{
+		packets: make([]Content, size),
+	}
 }
 
 func (b *ContentBuffer) initSig() {
@@ -65,7 +99,8 @@ func (b *ContentBuffer) SetHeader(data []byte) {
 	cp := make([]byte, len(data))
 	copy(cp, data)
 	if len(b.packets) > 0 && b.count > 0 {
-		b.headerPos = b.packets[(b.count-1)%ContentBufferSize].Pos + uint32(len(b.packets[(b.count-1)%ContentBufferSize].Data))
+		size := len(b.packets)
+		b.headerPos = b.packets[(b.count-1)%size].Pos + uint32(len(b.packets[(b.count-1)%size].Data))
 	}
 	b.header = cp
 }
@@ -73,9 +108,12 @@ func (b *ContentBuffer) SetHeader(data []byte) {
 // Write appends a data packet and wakes all goroutines waiting on Signal().
 func (b *ContentBuffer) Write(data []byte, pos uint32, contFlags byte) {
 	b.mu.Lock()
+	if b.packets == nil {
+		b.packets = make([]Content, DefaultContentBufferSize)
+	}
 	cp := make([]byte, len(data))
 	copy(cp, data)
-	b.packets[b.count%ContentBufferSize] = Content{Pos: pos, Data: cp, ContFlags: contFlags}
+	b.packets[b.count%len(b.packets)] = Content{Pos: pos, Data: cp, ContFlags: contFlags}
 	b.count++
 	b.mu.Unlock()
 	b.notifyWrite()
@@ -96,10 +134,11 @@ func (b *ContentBuffer) OldestPos() uint32 {
 	if b.count == 0 {
 		return 0
 	}
-	if b.count <= ContentBufferSize {
+	size := len(b.packets)
+	if b.count <= size {
 		return b.packets[0].Pos
 	}
-	return b.packets[b.count%ContentBufferSize].Pos
+	return b.packets[b.count%size].Pos
 }
 
 // NewestPos returns the stream position of the newest buffered packet.
@@ -110,7 +149,7 @@ func (b *ContentBuffer) NewestPos() uint32 {
 	if b.count == 0 {
 		return 0
 	}
-	return b.packets[(b.count-1)%ContentBufferSize].Pos
+	return b.packets[(b.count-1)%len(b.packets)].Pos
 }
 
 // Since returns all packets at or after the given stream position.
@@ -128,14 +167,15 @@ func (b *ContentBuffer) Since(pos uint32) []Content {
 	// Determine the range of valid indices in the ring buffer.
 	start := 0
 	end := b.count
-	if b.count > ContentBufferSize {
-		start = b.count - ContentBufferSize
+	size := len(b.packets)
+	if b.count > size {
+		start = b.count - size
 	}
 
 	// Find the first index >= pos.
 	firstIdx := -1
 	for i := start; i < end; i++ {
-		p := b.packets[i%ContentBufferSize]
+		p := b.packets[i%size]
 		if p.Pos >= pos {
 			firstIdx = i
 			break
@@ -148,7 +188,7 @@ func (b *ContentBuffer) Since(pos uint32) []Content {
 
 	result := make([]Content, 0, end-firstIdx)
 	for i := firstIdx; i < end; i++ {
-		result = append(result, b.packets[i%ContentBufferSize])
+		result = append(result, b.packets[i%size])
 	}
 	return result
 }

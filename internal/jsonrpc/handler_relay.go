@@ -55,7 +55,7 @@ func (s *Server) relayChannel(params json.RawMessage) (interface{}, *rpcError) {
 		return nil, &rpcError{Code: errCodeInvalidParams, Message: "channel already active"}
 	}
 
-	ch := channel.New(chanID, pcp.GnuID{})
+	ch := channel.New(chanID, pcp.GnuID{}, 0)
 	ch.SetSource(upstreamAddr)
 	ch.SetUpstreamAddr(upstreamAddr)
 	client := relay.New(upstreamAddr, chanID, s.sessionID, ch)

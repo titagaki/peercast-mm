@@ -28,7 +28,7 @@ func newPCPOut() *mockOutput  { nextMockID++; return &mockOutput{t: OutputStream
 func newHTTPOut() *mockOutput { nextMockID++; return &mockOutput{t: OutputStreamHTTP, id: nextMockID} }
 
 func newTestChannel() *Channel {
-	return New(pcp.GnuID{}, pcp.GnuID{})
+	return New(pcp.GnuID{}, pcp.GnuID{}, 0)
 }
 
 // TestChannel_AddOutputCounters は AddOutput がカウンタを正しく増加させることを確認する。

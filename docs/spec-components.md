@@ -138,7 +138,7 @@ type Content struct {
 type ContentBuffer struct {
     header    []byte                    // 最新のストリームヘッダー
     headerPos uint32                    // ヘッダーのストリーム位置
-    packets   [ContentBufferSize]Content // リングバッファ
+    packets   []Content                 // リングバッファ (サイズはビットレートから自動計算)
     count     int                       // 書き込み総数
     mu        sync.RWMutex
 }
@@ -147,7 +147,7 @@ type ContentBuffer struct {
 ### 設計方針
 
 - `header`: `SetHeader` で上書き。新規接続時に必ず最初に送る
-- `packets`: 固定長リングバッファ (64 件)。満杯時は最古から上書き
+- `packets`: リングバッファ。サイズはビットレートと `content_buffer_seconds` 設定 (デフォルト 8 秒) から自動計算。最小 64 パケット。満杯時は最古から上書き
 - 新規接続は `header` を送信後、`ContFlags` に `InterFrame (0x02)` が含まれない最初のパケット (= キーフレーム) 以降を送る
 
 ### インターフェース

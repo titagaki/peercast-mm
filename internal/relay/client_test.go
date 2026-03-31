@@ -17,7 +17,7 @@ import (
 )
 
 func newTestChannel() *channel.Channel {
-	return channel.New(pcp.GnuID{}, pcp.GnuID{})
+	return channel.New(pcp.GnuID{}, pcp.GnuID{}, 0)
 }
 
 // --- readHTTPStatus ---

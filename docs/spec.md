@@ -55,7 +55,7 @@ Go 製 PeerCast ノードの実装仕様。ブロードキャストノード（R
 │                     ▼                                     │
 │  ┌─────────────────────┐  ┌─────────────────────────┐    │
 │  │  ContentBuffer      │  │  ChannelInfo / TrackInfo │    │
-│  │  (head + data 64件) │  │  (メタデータ)             │    │
+│  │  (head + data ring) │  │  (メタデータ)             │    │
 │  └─────────────────────┘  └─────────────────────────┘    │
 └──┬────────────────────────────────────────────────────┬───┘
    │ fan-out (チャンネルID でルーティング)               │ 定期 bcst (全チャンネル)
@@ -263,7 +263,8 @@ type PCPOutputStream struct {
 | `defaultRTMPPort` | 1935 | RTMP リスニングポート |
 | `PCPVersion` | 1218 | PCP プロトコルバージョン |
 | `PCPVersionVP` | 27 | VP 拡張バージョン |
-| `ContentBufferSize` | 64 | コンテンツバッファのパケット数 |
+| `DefaultContentBufferSize` | 64 | コンテンツバッファの最小パケット数 |
+| `DefaultContentBufferSeconds` | 8.0 | バッファが保持するデフォルト秒数 |
 | `bcstTTL` | 7 | bcst TTL |
 | `retryInitial` | 5s | YP 再接続初期待機時間 |
 | `retryMax` | 120s | YP 再接続最大待機時間 |

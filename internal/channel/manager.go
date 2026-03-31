@@ -31,6 +31,11 @@ type RelayHandle interface {
 type Manager struct {
 	broadcastID pcp.GnuID
 
+	// ContentBufferSeconds is the duration (in seconds) the ring buffer
+	// should cover for new channels. Packet count is computed from bitrate.
+	// 0 means use DefaultContentBufferSeconds.
+	ContentBufferSeconds float64
+
 	mu            sync.RWMutex
 	streamKeys    map[string]struct{}   // issued stream keys
 	byID          map[pcp.GnuID]*Channel
@@ -88,7 +93,8 @@ func (m *Manager) Broadcast(streamKey string, info ChannelInfo, track TrackInfo)
 		return nil, fmt.Errorf("stream key %q already has an active channel", streamKey)
 	}
 	channelID := channelIDForBroadcast(m.broadcastID, streamKey, info.Name, info.Genre, info.Bitrate)
-	ch := New(channelID, m.broadcastID)
+	bufSize := ContentBufferSizeForBitrate(info.Bitrate, m.ContentBufferSeconds)
+	ch := New(channelID, m.broadcastID, bufSize)
 	// Set fields directly: ch is not yet visible to other goroutines.
 	ch.isBroadcasting = true
 	ch.info = info

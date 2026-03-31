@@ -6,6 +6,31 @@ import (
 	"testing"
 )
 
+// TestContentBufferSizeForBitrate はビットレートと秒数からバッファサイズを
+// 正しく計算できることを確認する。
+func TestContentBufferSizeForBitrate(t *testing.T) {
+	tests := []struct {
+		name    string
+		kbps    uint32
+		seconds float64
+		wantMin int
+	}{
+		{"zero bitrate returns default", 0, 8, DefaultContentBufferSize},
+		{"zero seconds returns default", 1000, 0, DefaultContentBufferSize},
+		{"low bitrate clamps to default", 100, 1, DefaultContentBufferSize},
+		{"4Mbps 8s", 4000, 8, 200},
+		{"8Mbps 8s", 8000, 8, 400},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ContentBufferSizeForBitrate(tt.kbps, tt.seconds)
+			if got < tt.wantMin {
+				t.Errorf("ContentBufferSizeForBitrate(%d, %f) = %d, want >= %d", tt.kbps, tt.seconds, got, tt.wantMin)
+			}
+		})
+	}
+}
+
 // TestContentBuffer_HeaderEmpty はヘッダー未設定時に nil と pos=0 が返ることを確認する。
 func TestContentBuffer_HeaderEmpty(t *testing.T) {
 	var b ContentBuffer
@@ -87,15 +112,15 @@ func TestContentBuffer_OldestNewestPos_FewPackets(t *testing.T) {
 // OldestPos / NewestPos を確認する。
 func TestContentBuffer_RingOverflow(t *testing.T) {
 	var b ContentBuffer
-	// ContentBufferSize+1 個書き込む。先頭 1 件が追い出される。
-	for i := 0; i < ContentBufferSize+1; i++ {
+	// DefaultContentBufferSize+1 個書き込む。先頭 1 件が追い出される。
+	for i := 0; i < DefaultContentBufferSize+1; i++ {
 		b.Write([]byte{byte(i)}, uint32(i * 10), func() byte { if i > 0 { return 0x02 }; return 0 }())
 	}
 	// インデックス 1 が最古になるはず (インデックス 0 は上書きされた)
 	if got := b.OldestPos(); got != 10 {
 		t.Errorf("OldestPos after overflow: got %d, want 10", got)
 	}
-	want := uint32(ContentBufferSize * 10)
+	want := uint32(DefaultContentBufferSize * 10)
 	if got := b.NewestPos(); got != want {
 		t.Errorf("NewestPos after overflow: got %d, want %d", got, want)
 	}
@@ -154,13 +179,13 @@ func TestContentBuffer_Since_AfterNewest(t *testing.T) {
 // Since が正しく動作することを確認する。
 func TestContentBuffer_Since_RingOverflow(t *testing.T) {
 	var b ContentBuffer
-	for i := 0; i < ContentBufferSize+10; i++ {
+	for i := 0; i < DefaultContentBufferSize+10; i++ {
 		b.Write([]byte{byte(i)}, uint32(i), func() byte { if i > 0 { return 0x02 }; return 0 }())
 	}
 	oldest := b.OldestPos()
 	got := b.Since(oldest)
-	if len(got) != ContentBufferSize {
-		t.Errorf("Since(oldest) after overflow: got %d packets, want %d", len(got), ContentBufferSize)
+	if len(got) != DefaultContentBufferSize {
+		t.Errorf("Since(oldest) after overflow: got %d packets, want %d", len(got), DefaultContentBufferSize)
 	}
 }
 

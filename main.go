@@ -43,6 +43,7 @@ func main() {
 	slog.Info("startup", "session_id", sessionID, "broadcast_id", broadcastID)
 
 	mgr := channel.NewManager(broadcastID)
+	mgr.ContentBufferSeconds = cfg.ContentBufferSeconds
 
 	// Start OutputListener.
 	listener := servent.NewListener(sessionID, mgr, cfg.PeercastPort, cfg.MaxRelays, cfg.MaxListeners)
