@@ -197,6 +197,31 @@ func (m *Manager) List() []*Channel {
 	return channels
 }
 
+// TotalRelays returns the total number of active PCP relay connections
+// across all channels.
+func (m *Manager) TotalRelays() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	total := 0
+	for _, ch := range m.byID {
+		total += ch.NumRelays()
+	}
+	return total
+}
+
+// TotalSendRate returns the total send rate (bytes/sec) across all channels.
+func (m *Manager) TotalSendRate() int64 {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var total int64
+	for _, ch := range m.byID {
+		for _, c := range ch.Connections() {
+			total += c.SendRate
+		}
+	}
+	return total
+}
+
 // channelIDForBroadcast deterministically generates a channel ID from the
 // broadcast node ID, stream key, and channel metadata.
 func channelIDForBroadcast(broadcastID pcp.GnuID, streamKey, name, genre string, bitrate uint32) pcp.GnuID {

@@ -42,9 +42,13 @@ type Config struct {
 	// MaxRelays はチャンネルに直接接続できる下流リレーノード数の上限。
 	// 0 は無制限。
 	MaxRelays int `toml:"max_relays"`
+	// MaxRelaysTotal は全チャンネル合計のリレー数上限。0 は無制限。
+	MaxRelaysTotal int `toml:"max_relays_total"`
 	// MaxListeners はチャンネルに直接接続できる HTTP 視聴者数の上限。
 	// 0 は無制限。
 	MaxListeners int `toml:"max_listeners"`
+	// MaxUpstreamKbps は全チャンネル合計の上り帯域上限 (kbps)。0 は無制限。
+	MaxUpstreamKbps int `toml:"max_upstream_kbps"`
 	// ContentBufferSeconds はコンテンツリングバッファが保持する秒数。
 	// ビットレートからパケット数を自動計算する。0 はデフォルト (8秒) を使用。
 	ContentBufferSeconds float64 `toml:"content_buffer_seconds"`

@@ -17,33 +17,40 @@ import (
 	"github.com/titagaki/peercast-mm/internal/version"
 )
 
-// ChannelStore provides channel lookup by ID.
+// ChannelStore provides channel lookup by ID and aggregate statistics.
 type ChannelStore interface {
 	GetByID(channelID pcp.GnuID) (*channel.Channel, bool)
+	TotalRelays() int
+	TotalSendRate() int64
 }
 
 // Listener accepts incoming connections on the PeerCast port and dispatches them
 // to the appropriate output stream handler.
 type Listener struct {
-	sessionID    pcp.GnuID
-	mgr          ChannelStore
-	port         int
-	maxRelays    int // 0 = unlimited
-	maxListeners int // 0 = unlimited
-	listener     net.Listener
-	nextConnID   atomic.Int64
-	apiHandler   http.Handler // JSON-RPC handler for POST /api/; may be nil
+	sessionID       pcp.GnuID
+	mgr             ChannelStore
+	port            int
+	maxRelays       int // 0 = unlimited (per-channel)
+	maxRelaysTotal  int // 0 = unlimited (global)
+	maxListeners    int // 0 = unlimited (per-channel)
+	maxUpstreamKbps int // 0 = unlimited (global, kbps)
+	listener        net.Listener
+	nextConnID      atomic.Int64
+	apiHandler      http.Handler // JSON-RPC handler for POST /api/; may be nil
 }
 
 // NewListener creates a new Listener.
 // maxRelays and maxListeners set the per-channel connection limits (0 = unlimited).
-func NewListener(sessionID pcp.GnuID, mgr ChannelStore, port, maxRelays, maxListeners int) *Listener {
+// maxRelaysTotal and maxUpstreamKbps set global limits (0 = unlimited).
+func NewListener(sessionID pcp.GnuID, mgr ChannelStore, port, maxRelays, maxRelaysTotal, maxListeners, maxUpstreamKbps int) *Listener {
 	return &Listener{
-		sessionID:    sessionID,
-		mgr:          mgr,
-		port:         port,
-		maxRelays:    maxRelays,
-		maxListeners: maxListeners,
+		sessionID:       sessionID,
+		mgr:             mgr,
+		port:            port,
+		maxRelays:       maxRelays,
+		maxRelaysTotal:  maxRelaysTotal,
+		maxListeners:    maxListeners,
+		maxUpstreamKbps: maxUpstreamKbps,
 	}
 }
 
@@ -136,6 +143,16 @@ func (l *Listener) handlePCPRelay(cc *countingConn, br *bufio.Reader, peek []byt
 		cc.Close()
 		return
 	}
+	if l.maxRelaysTotal > 0 && l.mgr.TotalRelays() >= l.maxRelaysTotal {
+		slog.Info("pcp: relay rejected (total relay full)", "remote", cc.RemoteAddr())
+		cc.Close()
+		return
+	}
+	if l.isUpstreamFull() {
+		slog.Info("pcp: relay rejected (upstream bandwidth full)", "remote", cc.RemoteAddr())
+		cc.Close()
+		return
+	}
 	id := int(l.nextConnID.Add(1))
 	h := newPCPOutputStream(cc, br, l.sessionID, ch, id)
 	if !ch.TryAddOutput(h, l.maxRelays, l.maxListeners) {
@@ -161,6 +178,11 @@ func (l *Listener) handleHTTPStream(cc *countingConn, br *bufio.Reader, peek []b
 		cc.Close()
 		return
 	}
+	if l.isUpstreamFull() {
+		slog.Info("http: viewer rejected (upstream bandwidth full)", "remote", cc.RemoteAddr())
+		cc.Close()
+		return
+	}
 	id := int(l.nextConnID.Add(1))
 	h := newHTTPOutputStream(cc, br, ch, id)
 	if !ch.TryAddOutput(h, l.maxRelays, l.maxListeners) {
@@ -171,6 +193,16 @@ func (l *Listener) handleHTTPStream(cc *countingConn, br *bufio.Reader, peek []b
 	slog.Info("http: viewer connected", "remote", cc.RemoteAddr(), "id", id)
 	h.run()
 	ch.RemoveOutput(h)
+}
+
+// isUpstreamFull reports whether the total upstream bandwidth exceeds the limit.
+func (l *Listener) isUpstreamFull() bool {
+	if l.maxUpstreamKbps <= 0 {
+		return false
+	}
+	// SendRate is bytes/sec; convert to kbps (kilobits per second).
+	currentKbps := l.mgr.TotalSendRate() * 8 / 1000
+	return currentKbps >= int64(l.maxUpstreamKbps)
 }
 
 func startsWith(data []byte, prefix string) bool {

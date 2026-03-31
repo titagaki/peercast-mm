@@ -46,7 +46,7 @@ func main() {
 	mgr.ContentBufferSeconds = cfg.ContentBufferSeconds
 
 	// Start OutputListener.
-	listener := servent.NewListener(sessionID, mgr, cfg.PeercastPort, cfg.MaxRelays, cfg.MaxListeners)
+	listener := servent.NewListener(sessionID, mgr, cfg.PeercastPort, cfg.MaxRelays, cfg.MaxRelaysTotal, cfg.MaxListeners, cfg.MaxUpstreamKbps)
 	if err := listener.Listen(); err != nil {
 		slog.Error("output: listen failed", "err", err)
 		os.Exit(1)

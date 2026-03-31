@@ -61,7 +61,7 @@ func newTestEnvWithLimits(t *testing.T, maxRelays, maxListeners int) *testEnv {
 	}
 
 	// Start listener.
-	l := servent.NewListener(sessionID, mgr, peercastPort, maxRelays, maxListeners)
+	l := servent.NewListener(sessionID, mgr, peercastPort, maxRelays, 0, maxListeners, 0)
 	if err := l.Listen(); err != nil {
 		t.Fatalf("listener: %v", err)
 	}
