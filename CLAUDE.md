@@ -23,6 +23,7 @@ internal/
 docs/
   spec.md                  実装仕様書 (概要・アーキテクチャ・ライフサイクル)
   spec-components.md       実装仕様書 (コンポーネント詳細)
+  TODO.md                  改善候補
   api/jsonrpc.md           JSON-RPC API 仕様
   protocol/
     PCP_SPEC.md            PCP プロトコル仕様
