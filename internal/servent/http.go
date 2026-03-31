@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/titagaki/peercast-pcp/pcp"
+
 	"github.com/titagaki/peercast-mm/internal/channel"
 )
 
@@ -35,6 +37,9 @@ func newHTTPOutputStream(conn *countingConn, br *bufio.Reader, ch *channel.Chann
 
 // Type implements channel.OutputStream.
 func (o *HTTPOutputStream) Type() channel.OutputStreamType { return channel.OutputStreamHTTP }
+
+// SendBcst is a no-op for HTTP streams; bcst forwarding is PCP-only.
+func (o *HTTPOutputStream) SendBcst(_ *pcp.Atom) {}
 
 func (o *HTTPOutputStream) run() {
 	defer slog.Info("http: viewer disconnected", "remote", o.remoteAddr, "id", o.id)

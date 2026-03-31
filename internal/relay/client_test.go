@@ -190,7 +190,7 @@ func TestHandlePkt_Head(t *testing.T) {
 	pkt := pcp.NewParentAtom(pcp.PCPChanPkt,
 		pcp.NewID4Atom(pcp.PCPChanPktType, pktTypeHead),
 		pcp.NewIntAtom(pcp.PCPChanPktPos, 0),
-		pcp.NewBytesAtom(pcp.PCPChanPktHead, headerData),
+		pcp.NewBytesAtom(pcp.PCPChanPktData, headerData),
 	)
 	c.handlePkt(pkt)
 

@@ -23,6 +23,9 @@ type OutputStream interface {
 	NotifyInfo()
 	// NotifyTrack is called when TrackInfo changes.
 	NotifyTrack()
+	// SendBcst enqueues a bcst atom for forwarding to downstream.
+	// Only meaningful for PCP output streams; HTTP streams ignore this.
+	SendBcst(atom *pcp.Atom)
 	// Close terminates the output stream.
 	Close()
 	// Type returns whether this is a PCP relay or HTTP direct stream.
@@ -277,6 +280,19 @@ func (c *Channel) CloseAll() {
 // UptimeSeconds returns the number of seconds since the channel started.
 func (c *Channel) UptimeSeconds() uint32 {
 	return uint32(time.Since(c.StartTime).Seconds())
+}
+
+// Broadcast forwards a bcst atom to all PCP output streams except the sender.
+func (c *Channel) Broadcast(from OutputStream, atom *pcp.Atom) {
+	c.mu.RLock()
+	outputs := append([]OutputStream(nil), c.outputs...)
+	c.mu.RUnlock()
+	for _, o := range outputs {
+		if o == from || o.Type() != OutputStreamPCP {
+			continue
+		}
+		o.SendBcst(atom)
+	}
 }
 
 // Connections returns a snapshot of all active output connections.

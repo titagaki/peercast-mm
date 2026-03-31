@@ -27,6 +27,7 @@ type PCPOutputStream struct {
 	br        *bufio.Reader
 	sessionID pcp.GnuID
 	ch        *channel.Channel
+	bcstCh    chan *pcp.Atom
 }
 
 func newPCPOutputStream(conn *countingConn, br *bufio.Reader, sessionID pcp.GnuID, ch *channel.Channel, id int) *PCPOutputStream {
@@ -35,6 +36,7 @@ func newPCPOutputStream(conn *countingConn, br *bufio.Reader, sessionID pcp.GnuI
 		br:         br,
 		sessionID:  sessionID,
 		ch:         ch,
+		bcstCh:     make(chan *pcp.Atom, 8),
 	}
 	o.onClose = func() { conn.Close() }
 	return o
@@ -42,6 +44,14 @@ func newPCPOutputStream(conn *countingConn, br *bufio.Reader, sessionID pcp.GnuI
 
 // Type implements channel.OutputStream.
 func (o *PCPOutputStream) Type() channel.OutputStreamType { return channel.OutputStreamPCP }
+
+// SendBcst enqueues a bcst atom for forwarding to this downstream peer.
+func (o *PCPOutputStream) SendBcst(atom *pcp.Atom) {
+	select {
+	case o.bcstCh <- atom:
+	default:
+	}
+}
 
 func (o *PCPOutputStream) run() {
 	defer slog.Info("pcp: relay disconnected", "remote", o.remoteAddr, "id", o.id)
@@ -135,6 +145,22 @@ func (o *PCPOutputStream) handshake() (startPos uint32, err error) {
 		return 0, fmt.Errorf("bad agent version %d", v)
 	}
 
+	// Determine remote port from helo: ping (active check) > port (claimed).
+	remoteIP := ipToUint32(o.conn.RemoteAddr())
+	var remotePort uint16
+	if pingAtom := heloAtom.FindChild(pcp.PCPHeloPing); pingAtom != nil {
+		if pingPort, err := pingAtom.GetShort(); err == nil && pingPort != 0 {
+			remoteAddr := o.conn.RemoteAddr().(*net.TCPAddr)
+			if pingHost(remoteAddr.IP, pingPort, peerID, o.sessionID) {
+				remotePort = pingPort
+			}
+		}
+	} else if portAtom := heloAtom.FindChild(pcp.PCPHeloPort); portAtom != nil {
+		if p, err := portAtom.GetShort(); err == nil {
+			remotePort = p
+		}
+	}
+
 	// Send HTTP 200 OK first; oleh goes in the response body.
 	resp := "HTTP/1.0 200 OK\r\nContent-Type: application/x-peercast-pcp\r\n\r\n"
 	if _, err := io.WriteString(o.conn, resp); err != nil {
@@ -142,8 +168,6 @@ func (o *PCPOutputStream) handshake() (startPos uint32, err error) {
 	}
 
 	// Send oleh.
-	remoteIP := ipToUint32(o.conn.RemoteAddr())
-	remotePort := portFromAddr(o.conn.RemoteAddr())
 	oleh := pcp.NewParentAtom(pcp.PCPOleh,
 		pcp.NewStringAtom(pcp.PCPHeloAgent, version.AgentName),
 		pcp.NewIDAtom(pcp.PCPHeloSessionID, o.sessionID),
@@ -249,6 +273,8 @@ func (o *PCPOutputStream) streamLoop(reqPos uint32) {
 			o.sendTrackUpdate()
 		case <-o.headerCh:
 			o.sendHeaderUpdate()
+		case atom := <-o.bcstCh:
+			o.sendBcstAtom(atom)
 		case <-stallTimer.C:
 			slog.Info("pcp: queue timeout, closing", "remote", o.remoteAddr, "id", o.id)
 			return
@@ -256,7 +282,7 @@ func (o *PCPOutputStream) streamLoop(reqPos uint32) {
 	}
 }
 
-// drainNotifications processes any pending info/track/header notifications
+// drainNotifications processes any pending info/track/header/bcst notifications
 // without blocking.
 func (o *PCPOutputStream) drainNotifications() {
 	for {
@@ -267,6 +293,8 @@ func (o *PCPOutputStream) drainNotifications() {
 			o.sendTrackUpdate()
 		case <-o.headerCh:
 			o.sendHeaderUpdate()
+		case atom := <-o.bcstCh:
+			o.sendBcstAtom(atom)
 		default:
 			return
 		}
@@ -306,6 +334,12 @@ func (o *PCPOutputStream) sendHeaderUpdate() {
 	o.conn.SetWriteDeadline(time.Time{})
 }
 
+func (o *PCPOutputStream) sendBcstAtom(atom *pcp.Atom) {
+	o.conn.SetWriteDeadline(time.Now().Add(pcpWriteTimeout))
+	atom.Write(o.conn)
+	o.conn.SetWriteDeadline(time.Time{})
+}
+
 // tryReadBcst does a non-blocking read for bcst atoms from the downstream peer.
 // o.br (not o.conn) must be used because o.br may have buffered bytes from the handshake.
 func (o *PCPOutputStream) tryReadBcst() {
@@ -335,9 +369,38 @@ func (o *PCPOutputStream) forwardBcst(a *pcp.Atom) {
 			return
 		}
 	}
-	// We don't re-broadcast here; the Listener would fan-out.
-	// For now, silently consume.
-	slog.Debug("pcp: bcst received from downstream", "remote", o.remoteAddr, "id", o.id, "ttl", ttl)
+	// Check dest: if set and not us, forward without processing.
+	if dest := a.FindChild(pcp.PCPBcstDest); dest != nil {
+		id, err := dest.GetID()
+		if err == nil && id == o.sessionID {
+			return // addressed to us, don't forward
+		}
+	}
+	// Rebuild bcst with decremented TTL and incremented hops.
+	forwarded := rebuildBcst(a, ttl)
+	o.ch.Broadcast(o, forwarded)
+	slog.Debug("pcp: bcst forwarded from downstream", "remote", o.remoteAddr, "id", o.id, "ttl", ttl-1)
+}
+
+// rebuildBcst creates a new bcst atom with TTL decremented by 1 and hops incremented by 1.
+func rebuildBcst(a *pcp.Atom, ttl byte) *pcp.Atom {
+	var children []*pcp.Atom
+	for _, c := range a.Children() {
+		switch c.Tag {
+		case pcp.PCPBcstTTL:
+			children = append(children, pcp.NewByteAtom(pcp.PCPBcstTTL, ttl-1))
+		case pcp.PCPBcstHops:
+			hops, err := c.GetByte()
+			if err == nil {
+				children = append(children, pcp.NewByteAtom(pcp.PCPBcstHops, hops+1))
+			} else {
+				children = append(children, c)
+			}
+		default:
+			children = append(children, c)
+		}
+	}
+	return pcp.NewParentAtom(pcp.PCPBcst, children...)
 }
 
 func (o *PCPOutputStream) sendQuit(code uint32) {
@@ -385,7 +448,7 @@ func buildPktHeadAtom(header []byte, pos uint32) *pcp.Atom {
 	return pcp.NewParentAtom(pcp.PCPChanPkt,
 		pcp.NewID4Atom(pcp.PCPChanPktType, pcp.NewID4("head")),
 		pcp.NewIntAtom(pcp.PCPChanPktPos, pos),
-		pcp.NewBytesAtom(pcp.PCPChanPktHead, header),
+		pcp.NewBytesAtom(pcp.PCPChanPktData, header),
 	)
 }
 
@@ -414,4 +477,59 @@ func ipToUint32(addr net.Addr) uint32 {
 		return 0
 	}
 	return uint32(ip[0])<<24 | uint32(ip[1])<<16 | uint32(ip[2])<<8 | uint32(ip[3])
+}
+
+const pingTimeout = 2 * time.Second
+
+// pingHost performs a firewall reachability check by connecting to the remote
+// host on the specified port, sending pcp\n + helo, and checking if the oleh
+// session ID matches the expected peerID.
+func pingHost(remoteIP net.IP, port uint16, peerID, mySessionID pcp.GnuID) bool {
+	addr := net.JoinHostPort(remoteIP.String(), strconv.Itoa(int(port)))
+	conn, err := net.DialTimeout("tcp", addr, pingTimeout)
+	if err != nil {
+		slog.Debug("ping: dial failed", "addr", addr, "err", err)
+		return false
+	}
+	defer conn.Close()
+
+	conn.SetDeadline(time.Now().Add(pingTimeout))
+
+	// Send pcp\n magic: tag "pcp\n" + size 4 (LE) + version 1 (LE).
+	var magic [12]byte
+	copy(magic[0:4], "pcp\n")
+	magic[4] = 4 // size LE
+	magic[8] = 1 // version LE
+	if _, err := conn.Write(magic[:]); err != nil {
+		return false
+	}
+
+	// Send helo with our session ID.
+	helo := pcp.NewParentAtom(pcp.PCPHelo,
+		pcp.NewIDAtom(pcp.PCPHeloSessionID, mySessionID),
+	)
+	if err := helo.Write(conn); err != nil {
+		return false
+	}
+
+	// Read oleh.
+	br := bufio.NewReader(conn)
+	oleh, err := pcp.ReadAtom(br)
+	if err != nil || oleh.Tag != pcp.PCPOleh {
+		return false
+	}
+	sidAtom := oleh.FindChild(pcp.PCPHeloSessionID)
+	if sidAtom == nil {
+		return false
+	}
+	sid, err := sidAtom.GetID()
+	if err != nil {
+		return false
+	}
+	if sid == peerID {
+		slog.Debug("ping: succeeded", "addr", addr)
+		return true
+	}
+	slog.Debug("ping: session ID mismatch", "addr", addr)
+	return false
 }

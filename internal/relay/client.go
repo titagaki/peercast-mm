@@ -207,8 +207,8 @@ func (c *Client) handlePkt(pkt *pcp.Atom) {
 
 	switch pktType {
 	case pktTypeHead:
-		if headAtom := pkt.FindChild(pcp.PCPChanPktHead); headAtom != nil {
-			c.ch.SetHeader(headAtom.Data())
+		if dataAtom := pkt.FindChild(pcp.PCPChanPktData); dataAtom != nil {
+			c.ch.SetHeader(dataAtom.Data())
 		}
 	case pktTypeData:
 		dataAtom := pkt.FindChild(pcp.PCPChanPktData)

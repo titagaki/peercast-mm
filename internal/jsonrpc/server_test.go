@@ -124,14 +124,15 @@ type mockStream struct {
 	closed     bool
 }
 
-func (m *mockStream) NotifyHeader() {}
-func (m *mockStream) NotifyInfo()   {}
-func (m *mockStream) NotifyTrack()  {}
-func (m *mockStream) Close()        { m.closed = true }
-func (m *mockStream) Type() channel.OutputStreamType { return m.streamType }
-func (m *mockStream) ID() int                        { return m.id }
-func (m *mockStream) RemoteAddr() string             { return m.remoteAddr }
-func (m *mockStream) SendRate() int64                { return m.sendRate }
+func (m *mockStream) NotifyHeader()                   {}
+func (m *mockStream) NotifyInfo()                     {}
+func (m *mockStream) NotifyTrack()                    {}
+func (m *mockStream) Close()                          { m.closed = true }
+func (m *mockStream) Type() channel.OutputStreamType  { return m.streamType }
+func (m *mockStream) ID() int                         { return m.id }
+func (m *mockStream) RemoteAddr() string              { return m.remoteAddr }
+func (m *mockStream) SendRate() int64                 { return m.sendRate }
+func (m *mockStream) SendBcst(_ *pcp.Atom)            {}
 
 // ---------------------------------------------------------------------------
 // HTTP method validation

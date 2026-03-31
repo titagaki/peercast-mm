@@ -245,7 +245,7 @@ func (c *Client) buildBcst(ch *channel.Channel) *pcp.Atom {
 	)
 
 	flags := byte(pcp.PCPHostFlags1Tracker | pcp.PCPHostFlags1Relay | pcp.PCPHostFlags1Direct | pcp.PCPHostFlags1Recv | pcp.PCPHostFlags1CIN)
-	hostAtom := pcp.NewParentAtom(pcp.PCPHost,
+	hostChildren := []*pcp.Atom{
 		pcp.NewIDAtom(pcp.PCPHostID, c.sessionID),
 		pcp.NewIntAtom(pcp.PCPHostIP, c.globalIP),
 		pcp.NewShortAtom(pcp.PCPHostPort, c.listenPort),
@@ -261,7 +261,16 @@ func (c *Client) buildBcst(ch *channel.Channel) *pcp.Atom {
 		pcp.NewIntAtom(pcp.PCPHostVersionVP, version.PCPVersionVP),
 		pcp.NewBytesAtom(pcp.PCPHostVersionExPrefix, []byte(version.ExPrefix)),
 		pcp.NewShortAtom(pcp.PCPHostVersionExNumber, version.ExNumber()),
-	)
+	}
+	if upAddr := ch.UpstreamAddr(); upAddr != "" {
+		if upIP, upPort, err := parseHostPort(upAddr); err == nil {
+			hostChildren = append(hostChildren,
+				pcp.NewIntAtom(pcp.PCPHostUphostIP, upIP),
+				pcp.NewIntAtom(pcp.PCPHostUphostPort, uint32(upPort)),
+			)
+		}
+	}
+	hostAtom := pcp.NewParentAtom(pcp.PCPHost, hostChildren...)
 
 	return pcp.NewParentAtom(pcp.PCPBcst,
 		pcp.NewByteAtom(pcp.PCPBcstTTL, bcstTTL),
@@ -291,4 +300,27 @@ func ipToString(ip uint32) string {
 	b := make([]byte, 4)
 	binary.BigEndian.PutUint32(b, ip)
 	return net.IP(b).String()
+}
+
+// parseHostPort parses "host:port" and returns the IP as a big-endian uint32
+// and the port number. Returns an error for non-IPv4 or invalid addresses.
+func parseHostPort(addr string) (ip uint32, port uint16, err error) {
+	host, portStr, err := net.SplitHostPort(addr)
+	if err != nil {
+		return 0, 0, err
+	}
+	ips, err := net.LookupIP(host)
+	if err != nil || len(ips) == 0 {
+		return 0, 0, fmt.Errorf("resolve %s: %w", host, err)
+	}
+	v4 := ips[0].To4()
+	if v4 == nil {
+		return 0, 0, fmt.Errorf("not IPv4: %s", host)
+	}
+	ip = uint32(v4[0])<<24 | uint32(v4[1])<<16 | uint32(v4[2])<<8 | uint32(v4[3])
+	p, err := net.LookupPort("tcp", portStr)
+	if err != nil {
+		return 0, 0, err
+	}
+	return ip, uint16(p), nil
 }
