@@ -225,7 +225,7 @@ func (o *PCPOutputStream) streamLoop(reqPos uint32) {
 
 		if len(packets) > 0 {
 			for _, pkt := range packets {
-			if waitingForKeyframe && pkt.ContFlag != 0 {
+			if waitingForKeyframe && pkt.ContFlags != 0 {
 					pos = pkt.Pos + uint32(len(pkt.Data))
 					continue
 				}
@@ -235,7 +235,7 @@ func (o *PCPOutputStream) streamLoop(reqPos uint32) {
 					pcp.NewID4Atom(pcp.PCPChanPktType, pcp.NewID4("data")),
 					pcp.NewIntAtom(pcp.PCPChanPktPos, pkt.Pos),
 					pcp.NewBytesAtom(pcp.PCPChanPktData, pkt.Data),
-					pcp.NewByteAtom(pcp.PCPChanPktContinuation, pkt.ContFlag),
+					pcp.NewByteAtom(pcp.PCPChanPktContinuation, pkt.ContFlags),
 				)
 				atom := pcp.NewParentAtom(pcp.PCPChan,
 					pcp.NewIDAtom(pcp.PCPChanID, o.ch.ID),

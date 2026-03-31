@@ -176,8 +176,8 @@ func TestOnVideo_Keyframe(t *testing.T) {
 	if len(packets) != 1 {
 		t.Fatalf("expected 1 packet, got %d", len(packets))
 	}
-	if packets[0].ContFlag != 0 {
-		t.Error("keyframe should have ContFlag=0")
+	if packets[0].ContFlags != 0 {
+		t.Error("keyframe should have ContFlags=0")
 	}
 }
 
@@ -195,8 +195,8 @@ func TestOnVideo_InterFrame(t *testing.T) {
 	if len(packets) != 1 {
 		t.Fatalf("expected 1 packet, got %d", len(packets))
 	}
-	if packets[0].ContFlag != 0x02 {
-		t.Errorf("inter frame should have ContFlag=0x02, got 0x%02x", packets[0].ContFlag)
+	if packets[0].ContFlags != 0x02 {
+		t.Errorf("inter frame should have ContFlags=0x02, got 0x%02x", packets[0].ContFlags)
 	}
 }
 
@@ -253,8 +253,8 @@ func TestOnAudio_DataFrame(t *testing.T) {
 	if len(packets) != 1 {
 		t.Fatalf("expected 1 packet, got %d", len(packets))
 	}
-	if packets[0].ContFlag != 0x04 {
-		t.Errorf("audio data should have ContFlag=0x04, got 0x%02x", packets[0].ContFlag)
+	if packets[0].ContFlags != 0x04 {
+		t.Errorf("audio data should have ContFlags=0x04, got 0x%02x", packets[0].ContFlags)
 	}
 }
 

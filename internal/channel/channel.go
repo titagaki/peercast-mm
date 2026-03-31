@@ -171,8 +171,8 @@ func (c *Channel) SetHeader(data []byte) {
 }
 
 // Write appends a data packet to the buffer.
-func (c *Channel) Write(data []byte, pos uint32, contFlag byte) {
-	c.Buffer.Write(data, pos, contFlag)
+func (c *Channel) Write(data []byte, pos uint32, contFlags byte) {
+	c.Buffer.Write(data, pos, contFlags)
 }
 
 // AddOutput registers an output stream and updates the appropriate counter.

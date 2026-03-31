@@ -215,13 +215,13 @@ func (c *Client) handlePkt(pkt *pcp.Atom) {
 		if dataAtom == nil {
 			return
 		}
-		var contFlag byte
+		var contFlags byte
 		if contAtom := pkt.FindChild(pcp.PCPChanPktContinuation); contAtom != nil {
 			if b, err := contAtom.GetByte(); err == nil {
-				contFlag = b
+				contFlags = b
 			}
 		}
-		c.ch.Write(dataAtom.Data(), pos, contFlag)
+		c.ch.Write(dataAtom.Data(), pos, contFlags)
 	}
 }
 

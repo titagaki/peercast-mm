@@ -152,11 +152,11 @@ func (h *handler) OnVideo(timestamp uint32, payload io.Reader) error {
 	}
 
 	// keyframe (0x17) or inter (0x27)
-	var contFlag byte
+	var contFlags byte
 	if body[0] != 0x17 {
-		contFlag = 0x02 // InterFrame
+		contFlags = 0x02 // InterFrame
 	}
-	h.writeData(tag, contFlag)
+	h.writeData(tag, contFlags)
 	return nil
 }
 
@@ -233,14 +233,14 @@ func (h *handler) rebuildHeader() {
 	}
 }
 
-func (h *handler) writeData(tag []byte, contFlag byte) {
+func (h *handler) writeData(tag []byte, contFlags byte) {
 	ch := h.ch()
 	if ch == nil {
 		return
 	}
 	pos := h.streamPos
 	h.streamPos += uint32(len(tag))
-	ch.Write(tag, pos, contFlag)
+	ch.Write(tag, pos, contFlags)
 }
 
 // ---------------------------------------------------------------------------
