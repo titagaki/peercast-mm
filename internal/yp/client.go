@@ -190,7 +190,9 @@ func (c *Client) sendAllBcst(conn *pcp.Conn) error {
 		}
 		count++
 	}
-	slog.Debug("yp: bcst sent", "addr", c.addr, "channels", count)
+	if count > 0 {
+		slog.Debug("yp: bcst sent", "addr", c.addr, "channels", count)
+	}
 	return nil
 }
 
