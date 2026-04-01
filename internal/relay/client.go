@@ -58,13 +58,44 @@ func New(upstreamAddr string, channelID, sessionID pcp.GnuID, ch *channel.Channe
 
 // Run connects to the upstream node and runs the receive loop, reconnecting on
 // failure with exponential backoff. It blocks until Stop is called.
+// When the upstream returns 503 with relay host hints, Run tries those hosts
+// immediately before falling back to the original address with backoff.
 func (c *Client) Run() {
 	defer close(c.doneCh)
 	delay := retryInitial
+	originalAddr := c.upstreamAddr
+	triedAddrs := map[string]bool{}
+
 	for {
-		if err := c.connect(); err != nil {
+		hitHosts, err := c.connect()
+		if err != nil {
 			slog.Error("relay: connection error", "addr", c.upstreamAddr, "err", err)
 		}
+
+		// If we received relay host hints (from a 503 response), try them
+		// before falling back to the original address with backoff.
+		nextAddr := ""
+		for _, h := range hitHosts {
+			if !triedAddrs[h] {
+				nextAddr = h
+				break
+			}
+		}
+		if nextAddr != "" {
+			triedAddrs[c.upstreamAddr] = true
+			c.upstreamAddr = nextAddr
+			select {
+			case <-c.stopCh:
+				return
+			default:
+			}
+			continue
+		}
+
+		// Exhausted hints — reset to original address and apply backoff.
+		c.upstreamAddr = originalAddr
+		triedAddrs = map[string]bool{}
+
 		select {
 		case <-c.stopCh:
 			return
@@ -83,71 +114,68 @@ func (c *Client) Stop() {
 	<-c.doneCh
 }
 
-func (c *Client) connect() error {
+func (c *Client) connect() ([]string, error) {
 	chanIDHex := hex.EncodeToString(c.channelID[:])
 
 	conn, err := net.DialTimeout("tcp", c.upstreamAddr, dialTimeout)
 	if err != nil {
-		return fmt.Errorf("dial: %w", err)
+		return nil, fmt.Errorf("dial: %w", err)
 	}
 	defer conn.Close()
 
 	// 1. Send HTTP GET /channel/<id> with PCP upgrade header.
 	req := fmt.Sprintf("GET /channel/%s HTTP/1.0\r\nHost: %s\r\nx-peercast-pcp: 1\r\nx-peercast-pos: 0\r\n\r\n", chanIDHex, c.upstreamAddr)
 	if _, err := io.WriteString(conn, req); err != nil {
-		return fmt.Errorf("write GET: %w", err)
+		return nil, fmt.Errorf("write GET: %w", err)
 	}
 
-	// 2. Send pcp\n magic: tag "pcp\n" + size 4 (LE) + version 1 (LE).
-	var magic [12]byte
-	copy(magic[0:4], "pcp\n")
-	binary.LittleEndian.PutUint32(magic[4:8], 4)
-	binary.LittleEndian.PutUint32(magic[8:12], 1)
-	if _, err := conn.Write(magic[:]); err != nil {
-		return fmt.Errorf("write pcp magic: %w", err)
-	}
-
-	// 3. Send helo atom.
+	// 2. Send helo atom.
+	// Note: the pcp\n PCP_CONNECT magic is sent only for direct TCP connections
+	// (not HTTP-upgraded /channel/ requests), so it is intentionally omitted here.
 	helo := pcp.NewParentAtom(pcp.PCPHelo,
 		pcp.NewStringAtom(pcp.PCPHeloAgent, version.AgentName),
 		pcp.NewIDAtom(pcp.PCPHeloSessionID, c.sessionID),
 		pcp.NewIntAtom(pcp.PCPHeloVersion, version.PCPVersion),
 	)
 	if err := helo.Write(conn); err != nil {
-		return fmt.Errorf("write helo: %w", err)
+		return nil, fmt.Errorf("write helo: %w", err)
 	}
 
 	br := bufio.NewReader(conn)
 
-	// 4. Read HTTP response headers (skip until blank line).
+	// 3. Read HTTP response headers (skip until blank line).
 	statusCode, err := readHTTPStatus(br)
 	if err != nil {
-		return fmt.Errorf("read HTTP response: %w", err)
+		return nil, fmt.Errorf("read HTTP response: %w", err)
 	}
 	if statusCode != 200 && statusCode != 503 {
-		return fmt.Errorf("upstream returned HTTP %d", statusCode)
+		return nil, fmt.Errorf("upstream returned HTTP %d", statusCode)
 	}
 
-	// 5. Read oleh atom.
+	// 4. Read oleh atom.
 	oleh, err := pcp.ReadAtom(br)
 	if err != nil {
-		return fmt.Errorf("read oleh: %w", err)
+		return nil, fmt.Errorf("read oleh: %w", err)
 	}
 	if oleh.Tag != pcp.PCPOleh {
-		return fmt.Errorf("expected oleh, got %s", oleh.Tag)
+		return nil, fmt.Errorf("expected oleh, got %s", oleh.Tag)
 	}
 
 	slog.Info("relay: connected", "addr", c.upstreamAddr, "channel", chanIDHex)
 
-	// 6. Receive loop.
+	// 5. Receive loop. Returns any relay host hints from PCPHost atoms.
 	return c.receiveLoop(conn, br)
 }
 
-func (c *Client) receiveLoop(conn net.Conn, br *bufio.Reader) error {
+// pcpHostFlagsRelay is the flag bit in PCPHostFlags1 indicating a node can relay.
+const pcpHostFlagsRelay = byte(0x02)
+
+func (c *Client) receiveLoop(conn net.Conn, br *bufio.Reader) ([]string, error) {
+	var hitHosts []string
 	for {
 		select {
 		case <-c.stopCh:
-			return nil
+			return nil, nil
 		default:
 		}
 
@@ -157,20 +185,57 @@ func (c *Client) receiveLoop(conn net.Conn, br *bufio.Reader) error {
 		if err != nil {
 			select {
 			case <-c.stopCh:
-				return nil
+				return nil, nil
 			default:
 			}
-			return fmt.Errorf("read atom: %w", err)
+			return nil, fmt.Errorf("read atom: %w", err)
 		}
 
 		switch atom.Tag {
 		case pcp.PCPChan:
 			c.handleChan(atom)
+		case pcp.PCPHost:
+			if addr := parseRelayHost(atom); addr != "" {
+				hitHosts = append(hitHosts, addr)
+			}
 		case pcp.PCPQuit:
 			code, _ := atom.GetInt()
-			return fmt.Errorf("quit from upstream (code %d)", code)
+			return hitHosts, fmt.Errorf("quit from upstream (code %d)", code)
 		}
 	}
+}
+
+// parseRelayHost extracts a "host:port" string from a PCPHost atom.
+// Returns "" if the host does not advertise relay capability or lacks an address.
+func parseRelayHost(atom *pcp.Atom) string {
+	var ipInt uint32
+	var port uint16
+	var flags byte
+	hasIP := false
+	for _, child := range atom.Children() {
+		switch child.Tag {
+		case pcp.PCPHostIP:
+			if v, err := child.GetInt(); err == nil {
+				ipInt = v
+				hasIP = true
+			}
+		case pcp.PCPHostPort:
+			if v, err := child.GetShort(); err == nil {
+				port = v
+			}
+		case pcp.PCPHostFlags1:
+			if v, err := child.GetByte(); err == nil {
+				flags = v
+			}
+		}
+	}
+	if !hasIP || port == 0 || (flags&pcpHostFlagsRelay) == 0 {
+		return ""
+	}
+	// PCP stores IPv4 in network byte order via writeInt (little-endian on wire),
+	// so GetInt() restores the big-endian value, which we write back as big-endian.
+	ip := net.IP(binary.BigEndian.AppendUint32(nil, ipInt))
+	return fmt.Sprintf("%s:%d", ip, port)
 }
 
 func (c *Client) handleChan(atom *pcp.Atom) {
