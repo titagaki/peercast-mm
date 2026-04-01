@@ -131,9 +131,31 @@ func (s *Server) buildStatus(ch *channel.Channel) chanStatusResult {
 // Handlers
 // ---------------------------------------------------------------------------
 
-func (s *Server) issueStreamKey() (interface{}, *rpcError) {
-	key := s.mgr.IssueStreamKey()
-	return map[string]string{"streamKey": key}, nil
+func (s *Server) issueStreamKey(params json.RawMessage) (interface{}, *rpcError) {
+	var args []string
+	if err := json.Unmarshal(params, &args); err != nil || len(args) < 2 {
+		return nil, &rpcError{Code: errCodeInvalidParams, Message: "expected [accountName, streamKey]"}
+	}
+	accountName, streamKey := args[0], args[1]
+	if accountName == "" || streamKey == "" {
+		return nil, &rpcError{Code: errCodeInvalidParams, Message: "accountName and streamKey must not be empty"}
+	}
+	if err := s.mgr.IssueStreamKey(accountName, streamKey); err != nil {
+		return nil, &rpcError{Code: errCodeInternal, Message: err.Error()}
+	}
+	return nil, nil
+}
+
+func (s *Server) revokeStreamKey(params json.RawMessage) (interface{}, *rpcError) {
+	var args []string
+	if err := json.Unmarshal(params, &args); err != nil || len(args) < 1 {
+		return nil, &rpcError{Code: errCodeInvalidParams, Message: "expected [accountName]"}
+	}
+	accountName := args[0]
+	if !s.mgr.RevokeStreamKey(accountName) {
+		return nil, &rpcError{Code: errCodeInternal, Message: "account not found"}
+	}
+	return nil, nil
 }
 
 func (s *Server) broadcastChannel(params json.RawMessage) (interface{}, *rpcError) {

@@ -141,15 +141,12 @@ func (e *testEnv) rpc(method string, params interface{}) json.RawMessage {
 	return result.Result
 }
 
-// issueStreamKey issues a stream key via the API.
+// issueStreamKey generates a stream key and registers it via the API.
 func (e *testEnv) issueStreamKey() string {
 	e.t.Helper()
-	raw := e.rpc("issueStreamKey", nil)
-	var res struct {
-		StreamKey string `json:"streamKey"`
-	}
-	json.Unmarshal(raw, &res)
-	return res.StreamKey
+	key := "sk_" + hex.EncodeToString(id.NewRandom()[:])
+	e.rpc("issueStreamKey", []string{"test-account-" + key[3:11], key})
+	return key
 }
 
 // broadcastChannel creates a channel via the API and returns its hex channel ID.

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/titagaki/peercast-mi/internal/channel"
@@ -44,6 +45,11 @@ func main() {
 
 	mgr := channel.NewManager(broadcastID)
 	mgr.ContentBufferSeconds = cfg.ContentBufferSeconds
+	cachePath := filepath.Join(filepath.Dir(*configPath), "stream_keys.json")
+	mgr.SetCachePath(cachePath)
+	if err := mgr.LoadCache(); err != nil {
+		slog.Warn("stream key cache: load failed", "err", err)
+	}
 
 	// Start OutputListener.
 	listener := servent.NewListener(sessionID, mgr, cfg.PeercastPort, cfg.MaxRelays, cfg.MaxRelaysTotal, cfg.MaxListeners, cfg.MaxUpstreamKbps)

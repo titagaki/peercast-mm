@@ -54,7 +54,8 @@ JSON-RPC 2.0 仕様に準拠する。パラメータは **位置指定配列** (
 
 | メソッド | パラメータ | 返却値 |
 |---|---|---|
-| `issueStreamKey` | なし | `{ streamKey }` |
+| `issueStreamKey` | `[accountName, streamKey]` | `null` |
+| `revokeStreamKey` | `[accountName]` | `null` |
 | `broadcastChannel` | `[{ sourceUri, info, track }]` | `{ channelId }` |
 | `relayChannel` | `[{ upstreamAddr, channelId }]` | `{ channelId }` |
 | `getVersionInfo` | なし | `{ agentName }` |
@@ -78,16 +79,30 @@ JSON-RPC 2.0 仕様に準拠する。パラメータは **位置指定配列** (
 
 ### `issueStreamKey`
 
-**パラメータ:** なし
+**パラメータ:** `[accountName: string, streamKey: string]`
 
-RTMP エンコーダーが使用するストリームキーを新規発行する。
+アカウントに対してストリームキーを登録する。pcgw-0yp がキーを生成して呼び出す想定。
+同じ `accountName` で再呼び出しすると旧キーが無効化され新キーに差し替えられる（再発行）。
+登録内容はキャッシュファイル (`stream_keys.json`) に永続化される。
 
-**返却値:**
-```json
-{ "streamKey": "sk_a1b2c3d4e5f6789012345678abcdef01" }
-```
+**返却値:** `null`
 
-ストリームキーはプロセスが終了するまで有効。`stopChannel` でチャンネルを止めても失効しない。
+**エラー条件:**
+- `accountName` または `streamKey` が空 → `-32602`
+- キャッシュファイルへの書き込み失敗 → `-32603`
+
+---
+
+### `revokeStreamKey`
+
+**パラメータ:** `[accountName: string]`
+
+アカウントのストリームキーを無効化する。そのキーで放送中のチャンネルは停止しない。
+
+**返却値:** `null`
+
+**エラー条件:**
+- `accountName` が未登録 → `-32603`
 
 ---
 
@@ -133,7 +148,7 @@ ChannelID は入力パラメータから決定論的に生成される。同じ 
 **エラー条件:**
 - `info.name` が空 → `-32602`
 - `sourceUri` に `/live/<streamKey>` 形式がない → `-32602`
-- ストリームキーが未発行 (`issueStreamKey` を呼んでいない) → `-32602`
+- ストリームキーが未登録 (`issueStreamKey` で登録していない) → `-32602`
 - そのストリームキーで既に放送中 (`stopChannel` してから再呼び出しする) → `-32602`
 
 ---
@@ -481,7 +496,8 @@ YP への bcst を即時送信する（`YPClient.Bump()`）。YP 未設定の場
 
 ## 実装上の制約・注意事項
 
-- ストリームキーはメモリ上にのみ保持される。プロセス再起動で失効する。
+- ストリームキーはキャッシュファイル (`stream_keys.json`) に永続化される。プロセス再起動後も有効。
+- `revokeStreamKey` はキーを無効化するが、そのキーで放送中のチャンネルは停止しない。
 - 同じストリームキーで放送中に再度 `broadcastChannel` を呼ぶとエラー。`stopChannel` してから再呼び出しする。
 - `broadcastChannel` より先に RTMP push が来ても受け付ける（ストリームキーが発行済みであれば）。チャンネルが作成されるまでの RTMP データは静かにドロップされる。
 - `channelId` の照合は大文字・小文字を区別しない。

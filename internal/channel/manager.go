@@ -1,9 +1,9 @@
 package channel
 
 import (
-	"crypto/rand"
-	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"os"
 	"sync"
 
 	"github.com/titagaki/peercast-pcp/pcp"
@@ -20,16 +20,17 @@ type RelayHandle interface {
 // Manager manages stream keys and active broadcast channels.
 //
 // Stream keys are long-lived: issuing a key and stopping a channel that uses
-// it are independent operations. A key remains valid until the process exits.
+// it are independent operations. A key remains valid until revoked.
 //
 // Lifecycle:
 //
-//	IssueStreamKey() → streamKey (persists across channel stops)
+//	IssueStreamKey(accountName, streamKey) → persisted to cache
 //	Broadcast(streamKey, info, track) → *Channel + channelID
 //	Stop(channelID) → channel removed, streamKey still valid
-//	Broadcast(same args) → same channelID (deterministic)
+//	RevokeStreamKey(accountName) → key invalidated, active channels NOT stopped
 type Manager struct {
 	broadcastID pcp.GnuID
+	cachePath   string
 
 	// ContentBufferSeconds is the duration (in seconds) the ring buffer
 	// should cover for new channels. Packet count is computed from bitrate.
@@ -37,10 +38,11 @@ type Manager struct {
 	ContentBufferSeconds float64
 
 	mu            sync.RWMutex
-	streamKeys    map[string]struct{}   // issued stream keys
+	accounts      map[string]string  // accountName → streamKey
+	streamKeys    map[string]string  // streamKey → accountName (for O(1) lookup)
 	byID          map[pcp.GnuID]*Channel
-	byStreamKey   map[string]*Channel   // active channels only
-	streamKeyByID map[pcp.GnuID]string  // reverse map for status display
+	byStreamKey   map[string]*Channel  // active channels only
+	streamKeyByID map[pcp.GnuID]string // reverse map for status display
 	relays        map[pcp.GnuID]RelayHandle // relay clients keyed by channel ID
 }
 
@@ -49,7 +51,8 @@ type Manager struct {
 func NewManager(broadcastID pcp.GnuID) *Manager {
 	return &Manager{
 		broadcastID:   broadcastID,
-		streamKeys:    make(map[string]struct{}),
+		accounts:      make(map[string]string),
+		streamKeys:    make(map[string]string),
 		byID:          make(map[pcp.GnuID]*Channel),
 		byStreamKey:   make(map[string]*Channel),
 		streamKeyByID: make(map[pcp.GnuID]string),
@@ -57,14 +60,94 @@ func NewManager(broadcastID pcp.GnuID) *Manager {
 	}
 }
 
-// IssueStreamKey generates and registers a new stream key.
-// The key persists beyond any individual channel's lifetime.
-func (m *Manager) IssueStreamKey() string {
-	key := newStreamKey()
+// SetCachePath sets the path to the stream key cache file.
+// Call LoadCache after setting to populate from disk.
+func (m *Manager) SetCachePath(path string) {
+	m.cachePath = path
+}
+
+// LoadCache reads the cache file and populates the in-memory stream key store.
+// If the file does not exist, it is silently ignored.
+func (m *Manager) LoadCache() error {
+	if m.cachePath == "" {
+		return nil
+	}
+	data, err := os.ReadFile(m.cachePath)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("stream key cache: read %s: %w", m.cachePath, err)
+	}
+	var cache struct {
+		Accounts map[string]string `json:"accounts"`
+	}
+	if err := json.Unmarshal(data, &cache); err != nil {
+		return fmt.Errorf("stream key cache: parse %s: %w", m.cachePath, err)
+	}
 	m.mu.Lock()
-	m.streamKeys[key] = struct{}{}
+	defer m.mu.Unlock()
+	for name, key := range cache.Accounts {
+		m.accounts[name] = key
+		m.streamKeys[key] = name
+	}
+	return nil
+}
+
+func (m *Manager) saveCache() error {
+	if m.cachePath == "" {
+		return nil
+	}
+	m.mu.RLock()
+	accounts := make(map[string]string, len(m.accounts))
+	for name, key := range m.accounts {
+		accounts[name] = key
+	}
+	m.mu.RUnlock()
+
+	data, err := json.Marshal(struct {
+		Accounts map[string]string `json:"accounts"`
+	}{Accounts: accounts})
+	if err != nil {
+		return err
+	}
+	// Write atomically via temp file + rename.
+	tmp := m.cachePath + ".tmp"
+	if err := os.WriteFile(tmp, data, 0600); err != nil {
+		return fmt.Errorf("stream key cache: write %s: %w", m.cachePath, err)
+	}
+	return os.Rename(tmp, m.cachePath)
+}
+
+// IssueStreamKey registers an accountName → streamKey mapping.
+// If accountName already exists, the old stream key is replaced.
+// The mapping is persisted to the cache file.
+func (m *Manager) IssueStreamKey(accountName, streamKey string) error {
+	m.mu.Lock()
+	if oldKey, ok := m.accounts[accountName]; ok {
+		delete(m.streamKeys, oldKey)
+	}
+	m.accounts[accountName] = streamKey
+	m.streamKeys[streamKey] = accountName
 	m.mu.Unlock()
-	return key
+	return m.saveCache()
+}
+
+// RevokeStreamKey removes the stream key for the given account.
+// Active channels using the key are NOT stopped.
+// Returns false if the account was not found.
+func (m *Manager) RevokeStreamKey(accountName string) bool {
+	m.mu.Lock()
+	key, ok := m.accounts[accountName]
+	if !ok {
+		m.mu.Unlock()
+		return false
+	}
+	delete(m.accounts, accountName)
+	delete(m.streamKeys, key)
+	m.mu.Unlock()
+	m.saveCache() //nolint:errcheck
+	return true
 }
 
 // IsIssuedKey reports whether the given stream key has been issued.
@@ -228,13 +311,4 @@ func channelIDForBroadcast(broadcastID pcp.GnuID, streamKey, name, genre string,
 	// Embed the stream key into the name using a null-byte separator to avoid
 	// collisions between different (name, streamKey) combinations.
 	return id.ChannelID(broadcastID, name+"\x00"+streamKey, genre, bitrate)
-}
-
-// newStreamKey generates a random stream key with a "sk_" prefix.
-func newStreamKey() string {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		panic("channel: failed to generate stream key: " + err.Error())
-	}
-	return "sk_" + hex.EncodeToString(b)
 }

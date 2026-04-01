@@ -125,7 +125,9 @@ func (s *Server) dispatch(method string, params json.RawMessage) (interface{}, *
 	case "getSettings":
 		return s.getSettings()
 	case "issueStreamKey":
-		return s.issueStreamKey()
+		return s.issueStreamKey(params)
+	case "revokeStreamKey":
+		return s.revokeStreamKey(params)
 	case "broadcastChannel":
 		return s.broadcastChannel(params)
 	case "getChannels":

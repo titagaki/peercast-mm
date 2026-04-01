@@ -30,7 +30,8 @@ func newTestServer(t *testing.T) (*Server, *channel.Channel, pcp.GnuID) {
 		broadcastID[i] = byte(0xBB)
 	}
 	mgr := channel.NewManager(broadcastID)
-	streamKey := mgr.IssueStreamKey()
+	const streamKey = "sk_testkey"
+	mgr.IssueStreamKey("test-account", streamKey) //nolint:errcheck
 	info := channel.ChannelInfo{
 		Name:    "テストチャンネル",
 		URL:     "https://example.com",
