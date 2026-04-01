@@ -53,25 +53,13 @@ func (o *HTTPOutputStream) run() {
 	slog.Debug("http: request received", "remote", o.remoteAddr, "id", o.id, "path", req.URL.Path)
 	_ = req.Body.Close()
 
-	if !o.ch.Buffer.HasData() {
-		// Wait for the first data packet (e.g. while a relay is being established).
-		select {
-		case <-o.ch.Buffer.Signal():
-			// data arrived
-		case <-o.closeCh:
-			return
-		case <-time.After(30 * time.Second):
-			io.WriteString(o.conn, "HTTP/1.0 503 Service Unavailable\r\n\r\n")
-			return
-		}
-	}
-
+	// Send HTTP response headers immediately so the player does not time out
+	// waiting for a response while the relay chain is being established.
 	info := o.ch.Info()
 	mimeType := info.MIMEType
 	if mimeType == "" {
 		mimeType = "video/x-flv"
 	}
-
 	var sb strings.Builder
 	sb.WriteString("HTTP/1.0 200 OK\r\n")
 	sb.WriteString(fmt.Sprintf("Content-Type: %s\r\n", mimeType))
@@ -84,7 +72,19 @@ func (o *HTTPOutputStream) run() {
 		return
 	}
 
-	// Send header.
+	if !o.ch.Buffer.HasData() {
+		// Wait for the first data packet (e.g. while relay is being established).
+		select {
+		case <-o.ch.Buffer.Signal():
+			// data arrived
+		case <-o.closeCh:
+			return
+		case <-time.After(30 * time.Second):
+			return
+		}
+	}
+
+	// Send stream header (FLV header / codec config).
 	header, _ := o.ch.Buffer.Header()
 	if len(header) > 0 {
 		o.conn.SetWriteDeadline(time.Now().Add(directWriteTimeout))
