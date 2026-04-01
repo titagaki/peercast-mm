@@ -10,7 +10,10 @@ const PCPVersion = 1218
 // PCPVersionVP is the VP extension version number used in host atoms.
 const PCPVersionVP = 27
 
-const AgentName = "peercast-mi/" + Version
+const AgentName = "PeerCast-MI/" + Version
+
+// PCPClientMinVersion is the minimum PCP version required of connecting clients.
+const PCPClientMinVersion = 1200
 
 // ExPrefix is the 2-byte version extension prefix sent in PCP host atoms.
 const ExPrefix = "MI"
