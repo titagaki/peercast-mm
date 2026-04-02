@@ -76,6 +76,20 @@ addr = "pcp://localhost:7144/"
 
 ## チャンネルの作成と配信
 
+`ui/peercast-mm-api-client.html` はブラウザから操作できる Web UI。`file://` で直接開くと CORS エラーになるため、Python の簡易 HTTP サーバーで配信する。
+
+```sh
+python3 -m http.server 8080 --directory ui/
+# → http://localhost:8080/peercast-mm-api-client.html
+```
+
+localhost 以外のマシンからアクセスする場合は `config.toml` で Basic 認証を設定する。
+
+```toml
+admin_user = "admin"
+admin_pass = "your-password"
+```
+
 チャンネルは JSON-RPC API を使って動的に作成する。
 
 ### 1. ストリームキーを発行する
