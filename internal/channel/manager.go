@@ -38,11 +38,11 @@ type Manager struct {
 	ContentBufferSeconds float64
 
 	mu            sync.RWMutex
-	accounts      map[string]string  // accountName → streamKey
-	streamKeys    map[string]string  // streamKey → accountName (for O(1) lookup)
+	accounts      map[string]string // accountName → streamKey
+	streamKeys    map[string]string // streamKey → accountName (for O(1) lookup)
 	byID          map[pcp.GnuID]*Channel
-	byStreamKey   map[string]*Channel  // active channels only
-	streamKeyByID map[pcp.GnuID]string // reverse map for status display
+	byStreamKey   map[string]*Channel       // active channels only
+	streamKeyByID map[pcp.GnuID]string      // reverse map for status display
 	relays        map[pcp.GnuID]RelayHandle // relay clients keyed by channel ID
 }
 

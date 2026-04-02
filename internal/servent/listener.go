@@ -37,10 +37,10 @@ type Listener struct {
 	sessionID       pcp.GnuID
 	mgr             ChannelStore
 	port            int
-	maxRelays       int // 0 = unlimited (per-channel)
-	maxRelaysTotal  int // 0 = unlimited (global)
-	maxListeners    int // 0 = unlimited (per-channel)
-	maxUpstreamKbps int // 0 = unlimited (global, kbps)
+	maxRelays       int           // 0 = unlimited (per-channel)
+	maxRelaysTotal  int           // 0 = unlimited (global)
+	maxListeners    int           // 0 = unlimited (per-channel)
+	maxUpstreamKbps int           // 0 = unlimited (global, kbps)
 	globalIP        atomic.Uint32 // learned from YP oleh
 	listener        net.Listener
 	nextConnID      atomic.Int64
@@ -350,9 +350,9 @@ func newAPIResponseWriter(conn net.Conn) *apiResponseWriter {
 	return &apiResponseWriter{conn: conn, header: make(http.Header), status: http.StatusOK}
 }
 
-func (w *apiResponseWriter) Header() http.Header          { return w.header }
-func (w *apiResponseWriter) WriteHeader(code int)         { w.status = code }
-func (w *apiResponseWriter) Write(b []byte) (int, error)  { return w.body.Write(b) }
+func (w *apiResponseWriter) Header() http.Header         { return w.header }
+func (w *apiResponseWriter) WriteHeader(code int)        { w.status = code }
+func (w *apiResponseWriter) Write(b []byte) (int, error) { return w.body.Write(b) }
 
 func (w *apiResponseWriter) flush() {
 	body := w.body.Bytes()

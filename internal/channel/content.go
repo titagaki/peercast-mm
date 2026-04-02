@@ -29,8 +29,8 @@ func ContentBufferSizeForBitrate(bitrateKbps uint32, seconds float64) int {
 
 // Content is a single stream data packet.
 type Content struct {
-	Pos      uint32
-	Data     []byte
+	Pos       uint32
+	Data      []byte
 	ContFlags byte // PeerCastStation 互換ビットフラグ (0x00=None, 0x01=Fragment, 0x02=InterFrame, 0x04=AudioFrame)
 }
 

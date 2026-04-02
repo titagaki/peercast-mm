@@ -12,15 +12,15 @@ type mockOutput struct {
 	id int
 }
 
-func (m *mockOutput) NotifyHeader()              {}
-func (m *mockOutput) NotifyInfo()                {}
-func (m *mockOutput) NotifyTrack()               {}
-func (m *mockOutput) Close()                     {}
-func (m *mockOutput) Type() OutputStreamType     { return m.t }
-func (m *mockOutput) ID() int                    { return m.id }
-func (m *mockOutput) RemoteAddr() string         { return "127.0.0.1:0" }
-func (m *mockOutput) SendRate() int64            { return 0 }
-func (m *mockOutput) SendBcst(_ *pcp.Atom)       {}
+func (m *mockOutput) NotifyHeader()          {}
+func (m *mockOutput) NotifyInfo()            {}
+func (m *mockOutput) NotifyTrack()           {}
+func (m *mockOutput) Close()                 {}
+func (m *mockOutput) Type() OutputStreamType { return m.t }
+func (m *mockOutput) ID() int                { return m.id }
+func (m *mockOutput) RemoteAddr() string     { return "127.0.0.1:0" }
+func (m *mockOutput) SendRate() int64        { return 0 }
+func (m *mockOutput) SendBcst(_ *pcp.Atom)   {}
 
 var nextMockID int
 

@@ -262,7 +262,7 @@ func (o *PCPOutputStream) streamLoop(reqPos uint32) {
 
 		if len(packets) > 0 {
 			for _, pkt := range packets {
-			if waitingForKeyframe && pkt.ContFlags != 0 {
+				if waitingForKeyframe && pkt.ContFlags != 0 {
 					pos = pkt.Pos + uint32(len(pkt.Data))
 					continue
 				}
@@ -487,14 +487,6 @@ func notify(ch chan struct{}) {
 	case ch <- struct{}{}:
 	default:
 	}
-}
-
-func portFromAddr(addr net.Addr) uint16 {
-	tcp, ok := addr.(*net.TCPAddr)
-	if !ok {
-		return 0
-	}
-	return uint16(tcp.Port)
 }
 
 func ipToUint32(addr net.Addr) uint32 {
