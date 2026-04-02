@@ -119,7 +119,7 @@
   .layout {
     display: grid;
     grid-template-columns: 280px 1fr;
-    min-height: calc(100vh - 57px);
+    height: calc(100vh - 57px);
   }
 
   .sidebar {
@@ -171,17 +171,27 @@
   .tag-set { background: rgba(255,170,0,0.2); color: var(--warning); }
 
   .main {
-    display: grid;
-    grid-template-rows: 1fr 1fr;
+    display: flex;
+    flex-direction: column;
     overflow: hidden;
+    height: 100%;
   }
 
   .panel {
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    border-bottom: 1px solid var(--border);
+    min-height: 60px;
   }
+
+  .splitter {
+    height: 5px;
+    background: var(--border);
+    cursor: ns-resize;
+    flex-shrink: 0;
+    transition: background 0.15s;
+  }
+  .splitter:hover, .splitter.dragging { background: var(--accent); }
 
   .panel-header {
     display: flex;
@@ -438,8 +448,8 @@
     </div>
   </nav>
 
-  <div class="main">
-    <div class="panel">
+  <div class="main" id="mainPanel">
+    <div class="panel" id="requestPanel" style="height:45%">
       <div class="panel-header">
         <div class="panel-title">REQUEST // <span id="currentMethodLabel">getVersionInfo</span></div>
         <button class="copy-btn" onclick="copyRequestJson()">Copy JSON</button>
@@ -459,7 +469,9 @@
       </div>
     </div>
 
-    <div class="panel">
+    <div class="splitter" id="splitter"></div>
+
+    <div class="panel" style="flex:1;overflow:hidden;">
       <div class="panel-header">
         <div class="panel-title">RESPONSE</div>
         <div style="display:flex;gap:12px;align-items:center;">
@@ -478,6 +490,36 @@
 <div class="toast-container" id="toastContainer"></div>
 
 <script>
+// Splitter drag
+(function() {
+  const splitter = document.getElementById('splitter');
+  const requestPanel = document.getElementById('requestPanel');
+  const main = document.getElementById('mainPanel');
+  let dragging = false, startY = 0, startH = 0;
+  splitter.addEventListener('mousedown', e => {
+    dragging = true;
+    startY = e.clientY;
+    startH = requestPanel.getBoundingClientRect().height;
+    splitter.classList.add('dragging');
+    document.body.style.cursor = 'ns-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const mainH = main.getBoundingClientRect().height;
+    const newH = Math.min(Math.max(startH + (e.clientY - startY), 60), mainH - 65);
+    requestPanel.style.height = newH + 'px';
+  });
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    splitter.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  });
+})();
+
 let currentMethod = 'getVersionInfo';
 let lastResponse = null;
 let requestId = 1;
