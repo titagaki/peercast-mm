@@ -20,6 +20,10 @@ max_upstream_kbps = 0
 # ビットレートから必要なパケット数を自動計算する
 # content_buffer_seconds = 8
 
+# 非 localhost からの JSON-RPC アクセスに使う Basic 認証の資格情報
+admin_user = "admin"
+admin_pass = "hogehoge"
+
 # 複数の YP を定義しておき、起動時に -yp <name> で選択する。
 # デフォルト（-yp 省略時）は最初のエントリが使われる。
 [[yp]]

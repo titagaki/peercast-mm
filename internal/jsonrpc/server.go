@@ -39,14 +39,26 @@ func New(sessionID pcp.GnuID, mgr *channel.Manager, cfg *config.Config, ypClient
 // Handler returns an http.Handler for POST /api/1.
 func (s *Server) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
 		if !isLocalhost(r.RemoteAddr) {
-			http.Error(w, "forbidden", http.StatusForbidden)
-			return
+			if !s.checkBasicAuth(r) {
+				w.Header().Set("WWW-Authenticate", `Basic realm="peercast-mi"`)
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
 		}
 
 		var req rpcRequest
@@ -69,6 +81,16 @@ func (s *Server) Handler() http.Handler {
 		}
 		json.NewEncoder(w).Encode(resp)
 	})
+}
+
+// checkBasicAuth returns true if the request carries valid Basic auth credentials
+// as configured in cfg. Returns false if credentials are not configured or do not match.
+func (s *Server) checkBasicAuth(r *http.Request) bool {
+	if s.cfg.AdminUser == "" || s.cfg.AdminPass == "" {
+		return false
+	}
+	user, pass, ok := r.BasicAuth()
+	return ok && user == s.cfg.AdminUser && pass == s.cfg.AdminPass
 }
 
 // ---------------------------------------------------------------------------

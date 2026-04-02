@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>peercast-mi API Client</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Space+Mono:wght@400;700&display=swap');
+
+  :root {
+    --bg: #0a0b0d;
+    --surface: #111318;
+    --surface2: #181c24;
+    --border: #232830;
+    --accent: #00d4aa;
+    --accent2: #0099ff;
+    --accent-dim: rgba(0, 212, 170, 0.12);
+    --text: #e2e8f0;
+    --text-dim: #64748b;
+    --text-muted: #3d4a5a;
+    --error: #ff4466;
+    --warning: #ffaa00;
+    --success: #00d4aa;
+    --font-mono: 'JetBrains Mono', monospace;
+    --font-ui: 'Space Mono', monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px);
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  header {
+    border-bottom: 1px solid var(--border);
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    background: var(--surface);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .logo {
+    font-family: var(--font-ui);
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: -0.5px;
+    white-space: nowrap;
+  }
+  .logo span { color: var(--text-muted); }
+
+  .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    transition: background 0.3s;
+    flex-shrink: 0;
+  }
+  .status-dot.connected { background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: pulse 2s infinite; }
+  .status-dot.error { background: var(--error); }
+
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+  .endpoint-bar { display: flex; gap: 8px; flex: 1; align-items: center; }
+
+  .endpoint-input {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 6px 10px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .endpoint-input:focus { border-color: var(--accent); }
+
+  .btn {
+    font-family: var(--font-ui);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    padding: 6px 14px;
+    border: 1px solid;
+    cursor: pointer;
+    transition: all 0.15s;
+    text-transform: uppercase;
+    background: transparent;
+    white-space: nowrap;
+  }
+  .btn-primary { border-color: var(--accent); color: var(--accent); }
+  .btn-primary:hover { background: var(--accent-dim); }
+  .btn-primary:active { background: rgba(0,212,170,0.25); }
+  .btn-danger { border-color: var(--error); color: var(--error); }
+  .btn-danger:hover { background: rgba(255,68,102,0.1); }
+  .btn-secondary { border-color: var(--border); color: var(--text-dim); }
+  .btn-secondary:hover { border-color: var(--text-dim); color: var(--text); }
+  .btn-sm { padding: 4px 10px; font-size: 10px; }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    min-height: calc(100vh - 57px);
+  }
+
+  .sidebar {
+    border-right: 1px solid var(--border);
+    background: var(--surface);
+    overflow-y: auto;
+  }
+
+  .sidebar-section { border-bottom: 1px solid var(--border); padding: 12px 0; }
+
+  .sidebar-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    color: var(--text-muted);
+    padding: 4px 16px 8px;
+    text-transform: uppercase;
+  }
+
+  .method-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 7px 16px;
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.1s;
+    border-left: 2px solid transparent;
+  }
+  .method-btn:hover { background: var(--surface2); color: var(--text); }
+  .method-btn.active { background: var(--accent-dim); color: var(--accent); border-left-color: var(--accent); }
+
+  .method-tag {
+    font-size: 9px;
+    font-weight: 700;
+    padding: 2px 5px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+  .tag-get { background: rgba(0,153,255,0.2); color: var(--accent2); }
+  .tag-post { background: rgba(0,212,170,0.2); color: var(--accent); }
+  .tag-del { background: rgba(255,68,102,0.2); color: var(--error); }
+  .tag-set { background: rgba(255,170,0,0.2); color: var(--warning); }
+
+  .main {
+    display: grid;
+    grid-template-rows: 1fr 1fr;
+    overflow: hidden;
+  }
+
+  .panel {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .panel-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .panel-title {
+    font-family: var(--font-ui);
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-dim);
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    flex: 1;
+  }
+
+  .panel-body { flex: 1; overflow-y: auto; padding: 16px; }
+
+  .field-group { margin-bottom: 14px; }
+  .field-label {
+    display: block;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    margin-bottom: 5px;
+  }
+  .field-required { color: var(--accent); }
+  .field-hint { font-size: 10px; color: var(--text-muted); margin-top: 4px; }
+
+  .field-input, .field-textarea {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 7px 10px;
+    outline: none;
+    transition: border-color 0.2s;
+    resize: vertical;
+  }
+  .field-input:focus, .field-textarea:focus { border-color: var(--accent); }
+  .field-textarea { min-height: 80px; }
+
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .field-row4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; }
+
+  .section-title {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: var(--accent);
+    text-transform: uppercase;
+    padding: 8px 0 10px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 12px;
+  }
+
+  .status-badge { font-weight: 700; font-family: var(--font-ui); }
+  .status-ok { color: var(--success); }
+  .status-err { color: var(--error); }
+
+  .response-time { color: var(--text-muted); font-size: 11px; }
+
+  pre.response-body {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.7;
+    color: var(--text);
+    white-space: pre-wrap;
+    word-break: break-all;
+    margin: 0;
+  }
+
+  .json-key { color: #7dd3fc; }
+  .json-str { color: #86efac; }
+  .json-num { color: #fcd34d; }
+  .json-bool { color: #c084fc; }
+  .json-null { color: var(--text-muted); }
+
+  .history-list { display: flex; flex-direction: column; }
+  .history-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 16px;
+    border-bottom: 1px solid rgba(35,40,48,0.5);
+    cursor: pointer;
+    transition: background 0.1s;
+    font-size: 11px;
+  }
+  .history-item:hover { background: var(--surface2); }
+  .history-method { color: var(--accent); font-weight: 700; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .history-status-ok { color: var(--success); flex-shrink: 0; }
+  .history-status-err { color: var(--error); flex-shrink: 0; }
+  .history-time { color: var(--text-muted); font-size: 10px; flex-shrink: 0; }
+
+  .toast-container { position: fixed; bottom: 20px; right: 20px; display: flex; flex-direction: column; gap: 8px; z-index: 9998; }
+  .toast {
+    padding: 10px 16px;
+    border: 1px solid;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    animation: slideIn 0.2s ease;
+    max-width: 380px;
+  }
+  .toast-success { border-color: var(--accent); color: var(--accent); background: rgba(0,212,170,0.08); }
+  .toast-error { border-color: var(--error); color: var(--error); background: rgba(255,68,102,0.08); }
+
+  @keyframes slideIn { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+  .loading-spinner {
+    display: inline-block;
+    width: 14px; height: 14px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .no-content { color: var(--text-muted); font-size: 12px; padding: 24px 0; text-align: center; }
+
+  .tabs { display: flex; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .tab {
+    padding: 8px 16px;
+    font-family: var(--font-ui);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: all 0.15s;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  .copy-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    padding: 3px 8px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">peercast<span>-mi</span> // api client</div>
+  <div class="endpoint-bar">
+    <div id="statusDot" class="status-dot"></div>
+    <input id="endpointInput" class="endpoint-input" type="text" value="http://localhost:7144" placeholder="http://localhost:7144" />
+    <button class="btn btn-secondary btn-sm" onclick="testConnection()">PING</button>
+  </div>
+  <button class="btn btn-primary" onclick="sendRequest()">SEND ▶</button>
+</header>
+
+<div class="layout">
+  <nav class="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-label">System</div>
+      <button class="method-btn active" onclick="selectMethod('getVersionInfo')" data-method="getVersionInfo">
+        <span class="method-tag tag-get">GET</span>getVersionInfo
+      </button>
+      <button class="method-btn" onclick="selectMethod('getSettings')" data-method="getSettings">
+        <span class="method-tag tag-get">GET</span>getSettings
+      </button>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-label">Stream Keys</div>
+      <button class="method-btn" onclick="selectMethod('issueStreamKey')" data-method="issueStreamKey">
+        <span class="method-tag tag-post">SET</span>issueStreamKey
+      </button>
+      <button class="method-btn" onclick="selectMethod('revokeStreamKey')" data-method="revokeStreamKey">
+        <span class="method-tag tag-del">DEL</span>revokeStreamKey
+      </button>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-label">Streaming</div>
+      <button class="method-btn" onclick="selectMethod('broadcastChannel')" data-method="broadcastChannel">
+        <span class="method-tag tag-post">POST</span>broadcastChannel
+      </button>
+      <button class="method-btn" onclick="selectMethod('relayChannel')" data-method="relayChannel">
+        <span class="method-tag tag-post">POST</span>relayChannel
+      </button>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-label">Channels</div>
+      <button class="method-btn" onclick="selectMethod('getChannels')" data-method="getChannels">
+        <span class="method-tag tag-get">GET</span>getChannels
+      </button>
+      <button class="method-btn" onclick="selectMethod('getChannelInfo')" data-method="getChannelInfo">
+        <span class="method-tag tag-get">GET</span>getChannelInfo
+      </button>
+      <button class="method-btn" onclick="selectMethod('getChannelStatus')" data-method="getChannelStatus">
+        <span class="method-tag tag-get">GET</span>getChannelStatus
+      </button>
+      <button class="method-btn" onclick="selectMethod('setChannelInfo')" data-method="setChannelInfo">
+        <span class="method-tag tag-set">SET</span>setChannelInfo
+      </button>
+      <button class="method-btn" onclick="selectMethod('stopChannel')" data-method="stopChannel">
+        <span class="method-tag tag-del">STOP</span>stopChannel
+      </button>
+      <button class="method-btn" onclick="selectMethod('bumpChannel')" data-method="bumpChannel">
+        <span class="method-tag tag-post">POST</span>bumpChannel
+      </button>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-label">Connections</div>
+      <button class="method-btn" onclick="selectMethod('getChannelConnections')" data-method="getChannelConnections">
+        <span class="method-tag tag-get">GET</span>getChannelConnections
+      </button>
+      <button class="method-btn" onclick="selectMethod('stopChannelConnection')" data-method="stopChannelConnection">
+        <span class="method-tag tag-del">STOP</span>stopChannelConnection
+      </button>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-label">Network</div>
+      <button class="method-btn" onclick="selectMethod('getYellowPages')" data-method="getYellowPages">
+        <span class="method-tag tag-get">GET</span>getYellowPages
+      </button>
+      <button class="method-btn" onclick="selectMethod('getChannelRelayTree')" data-method="getChannelRelayTree">
+        <span class="method-tag tag-get">GET</span>getChannelRelayTree
+      </button>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-label">History</div>
+      <div id="historyList" class="history-list">
+        <div class="no-content">No requests yet</div>
+      </div>
+    </div>
+  </nav>
+
+  <div class="main">
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">REQUEST // <span id="currentMethodLabel">getVersionInfo</span></div>
+        <button class="copy-btn" onclick="copyRequestJson()">Copy JSON</button>
+        <button class="btn btn-primary btn-sm" onclick="sendRequest()">SEND</button>
+      </div>
+      <div class="tabs">
+        <div class="tab active" onclick="switchTab('form')">Form</div>
+        <div class="tab" onclick="switchTab('raw')">Raw JSON</div>
+      </div>
+      <div class="panel-body" style="padding:12px 16px;">
+        <div id="formTab" class="tab-content active">
+          <div id="formFields"></div>
+        </div>
+        <div id="rawTab" class="tab-content">
+          <textarea id="rawJson" class="field-textarea" style="min-height:200px;font-size:12px;" placeholder='{"jsonrpc":"2.0","method":"...","params":[],"id":1}'></textarea>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">RESPONSE</div>
+        <div style="display:flex;gap:12px;align-items:center;">
+          <span id="responseStatus" class="status-badge" style="color:var(--text-muted)">—</span>
+          <span id="responseTime" class="response-time"></span>
+        </div>
+        <button class="copy-btn" onclick="copyResponse()">Copy</button>
+      </div>
+      <div class="panel-body" id="responseBody">
+        <div class="no-content">Send a request to see the response</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+let currentMethod = 'getVersionInfo';
+let lastResponse = null;
+let requestId = 1;
+let history = [];
+let activeTab = 'form';
+
+// --- channelId フィールド共通
+const channelIdField = `
+  <div class="field-group">
+    <label class="field-label">channelId <span class="field-required">*</span></label>
+    <input id="f_channelId" class="field-input" type="text" placeholder="32文字のhex文字列" />
+  </div>`;
+
+// --- info + track フィールド共通
+function infoTrackHtml(bitrateDefault = 3000) {
+  return `
+    <div class="section-title">Info</div>
+    <div class="field-group">
+      <label class="field-label">name <span class="field-required">*</span></label>
+      <input id="f_name" class="field-input" type="text" placeholder="チャンネル名" />
+    </div>
+    <div class="field-row">
+      <div class="field-group">
+        <label class="field-label">genre</label>
+        <input id="f_genre" class="field-input" type="text" placeholder="ゲーム" />
+      </div>
+      <div class="field-group">
+        <label class="field-label">bitrate (kbps)</label>
+        <input id="f_bitrate" class="field-input" type="number" value="${bitrateDefault}" />
+        ${bitrateDefault === 0 ? '<div class="field-hint">0 = 現在値を維持</div>' : ''}
+      </div>
+    </div>
+    <div class="field-group">
+      <label class="field-label">url</label>
+      <input id="f_url" class="field-input" type="text" placeholder="https://example.com" />
+    </div>
+    <div class="field-row">
+      <div class="field-group">
+        <label class="field-label">desc</label>
+        <input id="f_desc" class="field-input" type="text" />
+      </div>
+      <div class="field-group">
+        <label class="field-label">comment</label>
+        <input id="f_comment" class="field-input" type="text" />
+      </div>
+    </div>
+    <div class="section-title">Track (optional)</div>
+    <div class="field-row4">
+      <div class="field-group">
+        <label class="field-label">title</label>
+        <input id="f_track_title" class="field-input" type="text" />
+      </div>
+      <div class="field-group">
+        <label class="field-label">creator</label>
+        <input id="f_track_creator" class="field-input" type="text" />
+      </div>
+      <div class="field-group">
+        <label class="field-label">album</label>
+        <input id="f_track_album" class="field-input" type="text" />
+      </div>
+      <div class="field-group">
+        <label class="field-label">track url</label>
+        <input id="f_track_url" class="field-input" type="text" />
+      </div>
+    </div>`;
+}
+
+const FORM_HTML = {
+  getVersionInfo: null,
+  getSettings: null,
+  getChannels: null,
+  getYellowPages: null,
+
+  issueStreamKey: `
+    <div class="field-group">
+      <label class="field-label">accountName <span class="field-required">*</span></label>
+      <input id="f_accountName" class="field-input" type="text" placeholder="アカウント名" />
+      <div class="field-hint">同じアカウント名で再呼び出しすると旧キーが上書きされる（再発行）</div>
+    </div>
+    <div class="field-group">
+      <label class="field-label">streamKey <span class="field-required">*</span></label>
+      <input id="f_streamKey" class="field-input" type="text" placeholder="sk_a1b2c3..." />
+      <div class="field-hint">stream_keys.json に永続化される。プロセス再起動後も有効</div>
+    </div>`,
+
+  revokeStreamKey: `
+    <div class="field-group">
+      <label class="field-label">accountName <span class="field-required">*</span></label>
+      <input id="f_accountName" class="field-input" type="text" placeholder="アカウント名" />
+      <div class="field-hint">放送中のチャンネルは停止しない</div>
+    </div>`,
+
+  broadcastChannel: `
+    <div class="section-title">Source</div>
+    <div class="field-group">
+      <label class="field-label">sourceUri <span class="field-required">*</span></label>
+      <input id="f_sourceUri" class="field-input" type="text" value="rtmp://127.0.0.1:1935/live/" placeholder="rtmp://127.0.0.1:1935/live/sk_..." />
+      <div class="field-hint">/live/&lt;streamKey&gt; 形式。issueStreamKey で登録済みキーを使用</div>
+    </div>
+    ` + infoTrackHtml(3000),
+
+  relayChannel: `
+    <div class="field-group">
+      <label class="field-label">upstreamAddr</label>
+      <input id="f_upstreamAddr" class="field-input" type="text" placeholder="192.168.1.10:7144" />
+      <div class="field-hint">空の場合は config の先頭 YP アドレスを使用</div>
+    </div>
+    ${channelIdField.replace('</div>', '<div class="field-hint">接続は非同期。isReceiving で受信確認を</div></div>')}`,
+
+  getChannelInfo: channelIdField,
+  getChannelStatus: channelIdField,
+  stopChannel: channelIdField,
+  bumpChannel: channelIdField,
+  getChannelConnections: channelIdField,
+  getChannelRelayTree: channelIdField,
+
+  setChannelInfo: channelIdField + infoTrackHtml(0),
+
+  stopChannelConnection: channelIdField + `
+    <div class="field-group">
+      <label class="field-label">connectionId <span class="field-required">*</span></label>
+      <input id="f_connectionId" class="field-input" type="number" placeholder="正の整数" />
+      <div class="field-hint">type: "relay" (PCP) のみ切断可。direct / source は対象外</div>
+    </div>`,
+};
+
+function renderForm(method) {
+  const container = document.getElementById('formFields');
+  const html = FORM_HTML[method];
+  if (html == null) {
+    container.innerHTML = '<div class="no-content" style="text-align:left;padding:8px 0;">このメソッドにパラメータはありません</div>';
+  } else {
+    container.innerHTML = html;
+  }
+}
+
+function buildParams(method) {
+  const g = id => document.getElementById(id)?.value ?? '';
+  const gi = id => parseInt(document.getElementById(id)?.value) || 0;
+  const infoObj = () => ({ name: g('f_name'), genre: g('f_genre'), url: g('f_url'), desc: g('f_desc'), comment: g('f_comment'), bitrate: gi('f_bitrate') });
+  const trackObj = () => ({ title: g('f_track_title'), creator: g('f_track_creator'), album: g('f_track_album'), url: g('f_track_url') });
+
+  switch (method) {
+    case 'issueStreamKey':      return [g('f_accountName'), g('f_streamKey')];
+    case 'revokeStreamKey':     return [g('f_accountName')];
+    case 'broadcastChannel':    return [{ sourceUri: g('f_sourceUri'), info: infoObj(), track: trackObj() }];
+    case 'relayChannel':        return [{ upstreamAddr: g('f_upstreamAddr'), channelId: g('f_channelId') }];
+    case 'setChannelInfo':      return [g('f_channelId'), infoObj(), trackObj()];
+    case 'stopChannelConnection': return [g('f_channelId'), gi('f_connectionId')];
+    case 'getChannelInfo': case 'getChannelStatus': case 'stopChannel':
+    case 'bumpChannel': case 'getChannelConnections': case 'getChannelRelayTree':
+      return [g('f_channelId')];
+    default: return [];
+  }
+}
+
+function buildRequestBody(method, params) {
+  return { jsonrpc: '2.0', method, params, id: requestId };
+}
+
+function selectMethod(method) {
+  currentMethod = method;
+  document.querySelectorAll('.method-btn').forEach(b => b.classList.remove('active'));
+  document.querySelector(`[data-method="${method}"]`)?.classList.add('active');
+  document.getElementById('currentMethodLabel').textContent = method;
+  renderForm(method);
+  updateRawJson();
+}
+
+function updateRawJson() {
+  const body = buildRequestBody(currentMethod, buildParams(currentMethod));
+  document.getElementById('rawJson').value = JSON.stringify(body, null, 2);
+}
+
+function switchTab(tab) {
+  activeTab = tab;
+  document.querySelectorAll('.tab').forEach((t, i) => {
+    t.classList.toggle('active', (i === 0 && tab === 'form') || (i === 1 && tab === 'raw'));
+  });
+  document.getElementById('formTab').classList.toggle('active', tab === 'form');
+  document.getElementById('rawTab').classList.toggle('active', tab === 'raw');
+  if (tab === 'raw') updateRawJson();
+}
+
+function getEndpoint() {
+  return document.getElementById('endpointInput').value.trim().replace(/\/$/, '') + '/api/1';
+}
+
+async function sendRequest() {
+  let body;
+  if (activeTab === 'raw') {
+    try { body = JSON.parse(document.getElementById('rawJson').value); }
+    catch(e) { showToast('Invalid JSON: ' + e.message, 'error'); return; }
+  } else {
+    body = buildRequestBody(currentMethod, buildParams(currentMethod));
+    requestId++;
+  }
+
+  const t0 = Date.now();
+  setResponseLoading();
+
+  try {
+    const res = await fetch(getEndpoint(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const elapsed = Date.now() - t0;
+    const data = await res.json();
+    showResponse(data, res.status, elapsed, body.method);
+    setStatusDot('connected');
+  } catch(e) {
+    showError(e.message, Date.now() - t0, body.method);
+    setStatusDot('error');
+  }
+}
+
+async function testConnection() {
+  try {
+    const res = await fetch(getEndpoint(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', method: 'getVersionInfo', params: [], id: 0 }),
+    });
+    if (res.ok) { setStatusDot('connected'); showToast('Connected to peercast-mi', 'success'); }
+    else { setStatusDot('error'); showToast('Server returned ' + res.status, 'error'); }
+  } catch(e) {
+    setStatusDot('error');
+    showToast('Connection failed: ' + e.message, 'error');
+  }
+}
+
+function setStatusDot(state) { document.getElementById('statusDot').className = 'status-dot ' + state; }
+
+function setResponseLoading() {
+  document.getElementById('responseStatus').innerHTML = '<div class="loading-spinner"></div>';
+  document.getElementById('responseTime').textContent = '';
+  document.getElementById('responseBody').innerHTML = '<div class="no-content">Sending...</div>';
+}
+
+function showResponse(data, httpStatus, elapsed, method) {
+  lastResponse = data;
+  const isError = !!data.error;
+  const statusEl = document.getElementById('responseStatus');
+  statusEl.textContent = isError ? `ERR ${data.error?.code}` : `${httpStatus} OK`;
+  statusEl.className = 'status-badge ' + (isError ? 'status-err' : 'status-ok');
+  document.getElementById('responseTime').textContent = `${elapsed}ms`;
+  document.getElementById('responseBody').innerHTML = `<pre class="response-body">${syntaxHighlight(JSON.stringify(data, null, 2))}</pre>`;
+  addHistory(method, !isError, elapsed);
+  if (!isError) showToast(`${method} → OK (${elapsed}ms)`, 'success');
+  else showToast(`${method} → ERR ${data.error?.code}: ${data.error?.message}`, 'error');
+}
+
+function showError(msg, elapsed, method) {
+  lastResponse = { error: msg };
+  document.getElementById('responseStatus').textContent = 'NETWORK ERROR';
+  document.getElementById('responseStatus').className = 'status-badge status-err';
+  document.getElementById('responseTime').textContent = `${elapsed}ms`;
+  document.getElementById('responseBody').innerHTML = `<pre class="response-body" style="color:var(--error)">${escapeHtml(msg)}</pre>`;
+  addHistory(method, false, elapsed);
+  showToast('Network error: ' + msg, 'error');
+}
+
+function syntaxHighlight(json) {
+  return escapeHtml(json).replace(
+    /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
+    m => {
+      if (/^"/.test(m)) return /:$/.test(m) ? `<span class="json-key">${m}</span>` : `<span class="json-str">${m}</span>`;
+      if (/true|false/.test(m)) return `<span class="json-bool">${m}</span>`;
+      if (/null/.test(m)) return `<span class="json-null">${m}</span>`;
+      return `<span class="json-num">${m}</span>`;
+    }
+  );
+}
+
+function escapeHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function addHistory(method, ok, elapsed) {
+  history.unshift({ method, ok, elapsed, time: new Date().toLocaleTimeString('ja-JP') });
+  if (history.length > 20) history.pop();
+  renderHistory();
+}
+
+function renderHistory() {
+  const el = document.getElementById('historyList');
+  if (!history.length) { el.innerHTML = '<div class="no-content">No requests yet</div>'; return; }
+  el.innerHTML = history.map(h => `
+    <div class="history-item" onclick="selectMethod('${h.method}')">
+      <span class="history-method">${h.method}</span>
+      <span class="${h.ok ? 'history-status-ok' : 'history-status-err'}">${h.ok ? '✓' : '✗'}</span>
+      <span class="history-time">${h.time}</span>
+    </div>`).join('');
+}
+
+function copyResponse() {
+  if (!lastResponse) return;
+  navigator.clipboard.writeText(JSON.stringify(lastResponse, null, 2));
+  showToast('Copied to clipboard', 'success');
+}
+
+function copyRequestJson() {
+  updateRawJson();
+  navigator.clipboard.writeText(document.getElementById('rawJson').value);
+  showToast('Copied to clipboard', 'success');
+}
+
+function showToast(msg, type) {
+  const c = document.getElementById('toastContainer');
+  const t = document.createElement('div');
+  t.className = `toast toast-${type}`;
+  t.textContent = msg;
+  c.appendChild(t);
+  setTimeout(() => t.remove(), 3500);
+}
+
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') sendRequest();
+});
+
+selectMethod('getVersionInfo');
+</script>
+</body>
+</html>

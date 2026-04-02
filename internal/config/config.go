@@ -52,7 +52,11 @@ type Config struct {
 	// ContentBufferSeconds はコンテンツリングバッファが保持する秒数。
 	// ビットレートからパケット数を自動計算する。0 はデフォルト (8秒) を使用。
 	ContentBufferSeconds float64 `toml:"content_buffer_seconds"`
-	YPs          []YP `toml:"yp"`
+	// AdminUser / AdminPass は非 localhost からの JSON-RPC アクセスに使う
+	// Basic 認証の資格情報。どちらか空の場合は非 localhost を拒否する。
+	AdminUser string `toml:"admin_user"`
+	AdminPass string `toml:"admin_pass"`
+	YPs       []YP   `toml:"yp"`
 }
 
 func defaults() Config {
