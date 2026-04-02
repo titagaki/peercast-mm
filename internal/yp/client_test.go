@@ -202,7 +202,8 @@ func TestBuildBcst(t *testing.T) {
 	c := New("localhost:7144", sid, bcid, mgr, 7144)
 	c.globalIP = 0xC0A80001 // 192.168.0.1
 
-	key := mgr.IssueStreamKey()
+	const key = "sk_testkey"
+	mgr.IssueStreamKey("test-account", key)
 	info := channel.ChannelInfo{
 		Name:    "TestCH",
 		Genre:   "game",
@@ -448,7 +449,8 @@ func TestRun_HandshakeAndBcst(t *testing.T) {
 	mgr := channel.NewManager(bcid)
 
 	// Create a channel so bcst has something to send.
-	key := mgr.IssueStreamKey()
+	const key = "sk_testkey"
+	mgr.IssueStreamKey("test-account", key)
 	info := channel.ChannelInfo{Name: "IntegrationCH", Genre: "test", Type: "FLV", Bitrate: 300}
 	ch, err := mgr.Broadcast(key, info, channel.TrackInfo{Title: "Song"})
 	if err != nil {
@@ -607,7 +609,8 @@ func TestRun_FullIntegration(t *testing.T) {
 	bcid := id.NewRandom()
 	mgr := channel.NewManager(bcid)
 
-	key := mgr.IssueStreamKey()
+	const key = "sk_testkey"
+	mgr.IssueStreamKey("test-account", key)
 	info := channel.ChannelInfo{Name: "FullTest", Genre: "test", Type: "FLV", Bitrate: 128}
 	ch, err := mgr.Broadcast(key, info, channel.TrackInfo{})
 	if err != nil {
@@ -738,7 +741,8 @@ func TestRun_BackoffResetsOnSuccess(t *testing.T) {
 	mgr := channel.NewManager(bcid)
 
 	// Register a channel so sendAllBcst actually writes an atom.
-	key := mgr.IssueStreamKey()
+	const key = "sk_testkey"
+	mgr.IssueStreamKey("test-account", key)
 	_, err = mgr.Broadcast(key, channel.ChannelInfo{Name: "test"}, channel.TrackInfo{})
 	if err != nil {
 		t.Fatal(err)
@@ -872,7 +876,8 @@ func TestRun_BumpSendsBcst(t *testing.T) {
 	bcid := id.NewRandom()
 	mgr := channel.NewManager(bcid)
 
-	key := mgr.IssueStreamKey()
+	const key = "sk_testkey"
+	mgr.IssueStreamKey("test-account", key)
 	info := channel.ChannelInfo{Name: "BumpTest", Genre: "test", Type: "FLV", Bitrate: 64}
 	_, err = mgr.Broadcast(key, info, channel.TrackInfo{})
 	if err != nil {

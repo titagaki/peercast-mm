@@ -144,7 +144,8 @@ func (e *testEnv) rpc(method string, params interface{}) json.RawMessage {
 // issueStreamKey generates a stream key and registers it via the API.
 func (e *testEnv) issueStreamKey() string {
 	e.t.Helper()
-	key := "sk_" + hex.EncodeToString(id.NewRandom()[:])
+	rawID := id.NewRandom()
+	key := "sk_" + hex.EncodeToString(rawID[:])
 	e.rpc("issueStreamKey", []string{"test-account-" + key[3:11], key})
 	return key
 }
@@ -746,9 +747,9 @@ func TestE2E_ConnectionTracking(t *testing.T) {
 	}
 }
 
-// TestE2E_HTTPViewerGets503WhenNoData verifies that an HTTP viewer gets 503
-// when the channel has no data yet.
-func TestE2E_HTTPViewerGets503WhenNoData(t *testing.T) {
+// TestE2E_HTTPViewerGets200WhenNoData verifies that an HTTP viewer gets 200
+// immediately (the server sends headers right away and waits for data).
+func TestE2E_HTTPViewerGets200WhenNoData(t *testing.T) {
 	env := newTestEnv(t)
 
 	streamKey := env.issueStreamKey()
@@ -759,8 +760,8 @@ func TestE2E_HTTPViewerGets503WhenNoData(t *testing.T) {
 	defer viewer.close()
 
 	resp := viewer.readResponse(t)
-	if resp.StatusCode != 503 {
-		t.Errorf("expected 503, got %d", resp.StatusCode)
+	if resp.StatusCode != 200 {
+		t.Errorf("expected 200, got %d", resp.StatusCode)
 	}
 }
 

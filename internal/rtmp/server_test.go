@@ -17,7 +17,10 @@ import (
 func setupHandler(t *testing.T) (*handler, *channel.Manager, *channel.Channel) {
 	t.Helper()
 	mgr := channel.NewManager(id.NewRandom())
-	key := mgr.IssueStreamKey()
+	const key = "sk_testkey"
+	if err := mgr.IssueStreamKey("test-account", key); err != nil {
+		t.Fatal(err)
+	}
 	info := channel.ChannelInfo{Name: "test", Genre: "test", Type: "FLV", MIMEType: "video/x-flv", Ext: ".flv"}
 	ch, err := mgr.Broadcast(key, info, channel.TrackInfo{})
 	if err != nil {
@@ -34,7 +37,10 @@ func setupHandler(t *testing.T) (*handler, *channel.Manager, *channel.Channel) {
 
 func TestOnPublish_AcceptsIssuedKey(t *testing.T) {
 	mgr := channel.NewManager(id.NewRandom())
-	key := mgr.IssueStreamKey()
+	const key = "sk_testkey"
+	if err := mgr.IssueStreamKey("test-account", key); err != nil {
+		t.Fatal(err)
+	}
 	h := newHandler(mgr, "127.0.0.1:9999")
 
 	cmd := &message.NetStreamPublish{PublishingName: key}
@@ -296,7 +302,8 @@ func TestRebuildHeader_NoSequenceHeaders(t *testing.T) {
 
 func TestRebuildHeader_NoChannel(t *testing.T) {
 	mgr := channel.NewManager(id.NewRandom())
-	key := mgr.IssueStreamKey()
+	const key = "sk_testkey"
+	mgr.IssueStreamKey("test-account", key)
 	h := newHandler(mgr, "127.0.0.1:9999")
 	h.streamKey = key
 	// Don't call Broadcast, so h.ch() returns nil.
@@ -366,7 +373,8 @@ func TestOnClose_NoStreamKey(t *testing.T) {
 
 func TestOnClose_NoBroadcast(t *testing.T) {
 	mgr := channel.NewManager(id.NewRandom())
-	key := mgr.IssueStreamKey()
+	const key = "sk_testkey"
+	mgr.IssueStreamKey("test-account", key)
 	h := newHandler(mgr, "127.0.0.1:9999")
 	h.streamKey = key
 	// Key issued but no Broadcast called → ch not found → should not panic
@@ -387,7 +395,8 @@ func TestCh_BeforePublish(t *testing.T) {
 
 func TestCh_BeforeBroadcast(t *testing.T) {
 	mgr := channel.NewManager(id.NewRandom())
-	key := mgr.IssueStreamKey()
+	const key = "sk_testkey"
+	mgr.IssueStreamKey("test-account", key)
 	h := newHandler(mgr, "127.0.0.1:9999")
 	h.streamKey = key
 	// key issued but not broadcasting
@@ -402,7 +411,8 @@ func TestCh_BeforeBroadcast(t *testing.T) {
 
 func TestDataBeforeBroadcast_SilentlyDropped(t *testing.T) {
 	mgr := channel.NewManager(id.NewRandom())
-	key := mgr.IssueStreamKey()
+	const key = "sk_testkey"
+	mgr.IssueStreamKey("test-account", key)
 	h := newHandler(mgr, "127.0.0.1:9999")
 	h.streamKey = key
 

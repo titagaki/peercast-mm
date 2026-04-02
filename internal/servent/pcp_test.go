@@ -18,7 +18,7 @@ func newTestOutputStream(t *testing.T) (*PCPOutputStream, net.Conn) {
 	cc := newCountingConn(c1)
 	br := bufio.NewReader(cc)
 	var sid pcp.GnuID
-	out := newPCPOutputStream(cc, br, sid, channel.New(pcp.GnuID{}, pcp.GnuID{}, 0), 42)
+	out := newPCPOutputStream(cc, br, sid, channel.New(pcp.GnuID{}, pcp.GnuID{}, 0), 42, 0, 0)
 	return out, c2
 }
 

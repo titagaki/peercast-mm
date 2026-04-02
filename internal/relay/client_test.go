@@ -3,7 +3,6 @@ package relay
 import (
 	"bufio"
 	"bytes"
-	"encoding/binary"
 	"fmt"
 	"io"
 	"net"
@@ -18,6 +17,10 @@ import (
 
 func newTestChannel() *channel.Channel {
 	return channel.New(pcp.GnuID{}, pcp.GnuID{}, 0)
+}
+
+func newTestClient(addr string, ch *channel.Channel) *Client {
+	return New(addr, pcp.GnuID{}, pcp.GnuID{}, 0, ch)
 }
 
 // --- readHTTPStatus ---
@@ -144,7 +147,7 @@ func TestParseChanTrack(t *testing.T) {
 
 func TestHandleChan_BroadcastID(t *testing.T) {
 	ch := newTestChannel()
-	c := New("127.0.0.1:7144", pcp.GnuID{}, pcp.GnuID{}, ch)
+	c := New("127.0.0.1:7144", pcp.GnuID{}, pcp.GnuID{}, 0, ch)
 
 	bcID := pcp.GnuID{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
 	atom := pcp.NewParentAtom(pcp.PCPChan,
@@ -159,7 +162,7 @@ func TestHandleChan_BroadcastID(t *testing.T) {
 
 func TestHandleChan_InfoAndTrack(t *testing.T) {
 	ch := newTestChannel()
-	c := New("127.0.0.1:7144", pcp.GnuID{}, pcp.GnuID{}, ch)
+	c := New("127.0.0.1:7144", pcp.GnuID{}, pcp.GnuID{}, 0, ch)
 
 	atom := pcp.NewParentAtom(pcp.PCPChan,
 		pcp.NewParentAtom(pcp.PCPChanInfo,
@@ -184,7 +187,7 @@ func TestHandleChan_InfoAndTrack(t *testing.T) {
 
 func TestHandlePkt_Head(t *testing.T) {
 	ch := newTestChannel()
-	c := New("127.0.0.1:7144", pcp.GnuID{}, pcp.GnuID{}, ch)
+	c := New("127.0.0.1:7144", pcp.GnuID{}, pcp.GnuID{}, 0, ch)
 
 	headerData := []byte("FLV\x01\x05")
 	pkt := pcp.NewParentAtom(pcp.PCPChanPkt,
@@ -202,7 +205,7 @@ func TestHandlePkt_Head(t *testing.T) {
 
 func TestHandlePkt_Data(t *testing.T) {
 	ch := newTestChannel()
-	c := New("127.0.0.1:7144", pcp.GnuID{}, pcp.GnuID{}, ch)
+	c := New("127.0.0.1:7144", pcp.GnuID{}, pcp.GnuID{}, 0, ch)
 
 	payload := []byte{0xDE, 0xAD, 0xBE, 0xEF}
 	pkt := pcp.NewParentAtom(pcp.PCPChanPkt,
@@ -226,7 +229,7 @@ func TestHandlePkt_Data(t *testing.T) {
 
 func TestHandlePkt_MissingType(t *testing.T) {
 	ch := newTestChannel()
-	c := New("127.0.0.1:7144", pcp.GnuID{}, pcp.GnuID{}, ch)
+	c := New("127.0.0.1:7144", pcp.GnuID{}, pcp.GnuID{}, 0, ch)
 
 	// pkt without type → should be silently ignored
 	pkt := pcp.NewParentAtom(pcp.PCPChanPkt,
@@ -245,7 +248,7 @@ func TestHandlePkt_MissingType(t *testing.T) {
 
 func TestReceiveLoop_QuitAtom(t *testing.T) {
 	ch := newTestChannel()
-	c := New("127.0.0.1:7144", pcp.GnuID{}, pcp.GnuID{}, ch)
+	c := New("127.0.0.1:7144", pcp.GnuID{}, pcp.GnuID{}, 0, ch)
 
 	// Write a quit atom into a pipe for the receive loop to read.
 	clientConn, serverConn := net.Pipe()
@@ -258,7 +261,7 @@ func TestReceiveLoop_QuitAtom(t *testing.T) {
 	}()
 
 	br := bufio.NewReader(clientConn)
-	err := c.receiveLoop(clientConn, br)
+	_, err := c.receiveLoop(clientConn, br)
 	if err == nil {
 		t.Fatal("expected error on quit")
 	}
@@ -269,7 +272,7 @@ func TestReceiveLoop_QuitAtom(t *testing.T) {
 
 func TestReceiveLoop_Stop(t *testing.T) {
 	ch := newTestChannel()
-	c := New("127.0.0.1:7144", pcp.GnuID{}, pcp.GnuID{}, ch)
+	c := New("127.0.0.1:7144", pcp.GnuID{}, pcp.GnuID{}, 0, ch)
 
 	clientConn, serverConn := net.Pipe()
 	defer serverConn.Close()
@@ -277,7 +280,8 @@ func TestReceiveLoop_Stop(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		br := bufio.NewReader(clientConn)
-		done <- c.receiveLoop(clientConn, br)
+		_, err := c.receiveLoop(clientConn, br)
+		done <- err
 	}()
 
 	// Let the loop start, then stop.
@@ -297,7 +301,7 @@ func TestReceiveLoop_Stop(t *testing.T) {
 
 func TestReceiveLoop_ChanAtom(t *testing.T) {
 	ch := newTestChannel()
-	c := New("127.0.0.1:7144", pcp.GnuID{}, pcp.GnuID{}, ch)
+	c := New("127.0.0.1:7144", pcp.GnuID{}, pcp.GnuID{}, 0, ch)
 
 	clientConn, serverConn := net.Pipe()
 	defer clientConn.Close()
@@ -316,7 +320,7 @@ func TestReceiveLoop_ChanAtom(t *testing.T) {
 	}()
 
 	br := bufio.NewReader(clientConn)
-	c.receiveLoop(clientConn, br)
+	_, _ = c.receiveLoop(clientConn, br)
 
 	if ch.Info().Name != "Relay Test" {
 		t.Errorf("Info.Name = %q, want %q", ch.Info().Name, "Relay Test")
@@ -343,8 +347,8 @@ func TestConnect_FullHandshake(t *testing.T) {
 		serverDone <- fakeUpstream(t, ln, channelID)
 	}()
 
-	c := New(ln.Addr().String(), channelID, sessionID, ch)
-	err = c.connect()
+	c := New(ln.Addr().String(), channelID, sessionID, 0, ch)
+	_, err = c.connect()
 	// connect returns a "quit" error because the fake upstream sends a quit atom
 	// to end the session — this is expected.
 	if err != nil && !strings.Contains(err.Error(), "quit from upstream") {
@@ -399,19 +403,7 @@ func fakeUpstream(t *testing.T, ln net.Listener, expectedChanID pcp.GnuID) error
 		}
 	}
 
-	// 2. Read pcp\n magic (12 bytes).
-	var magic [12]byte
-	if _, err := io.ReadFull(br, magic[:]); err != nil {
-		return fmt.Errorf("read magic: %w", err)
-	}
-	if string(magic[0:4]) != "pcp\n" {
-		return fmt.Errorf("bad magic tag: %q", magic[0:4])
-	}
-	if binary.LittleEndian.Uint32(magic[4:8]) != 4 {
-		return fmt.Errorf("bad magic size: %d", binary.LittleEndian.Uint32(magic[4:8]))
-	}
-
-	// 3. Read helo atom.
+	// 2. Read helo atom (no pcp\n magic for /channel/ HTTP-upgraded connections).
 	helo, err := pcp.ReadAtom(br)
 	if err != nil {
 		return fmt.Errorf("read helo: %w", err)
@@ -459,7 +451,7 @@ func fakeUpstream(t *testing.T, ln net.Listener, expectedChanID pcp.GnuID) error
 func TestRunStop(t *testing.T) {
 	ch := newTestChannel()
 	// Use an invalid address so connect fails immediately.
-	c := New("127.0.0.1:1", pcp.GnuID{}, pcp.GnuID{}, ch)
+	c := New("127.0.0.1:1", pcp.GnuID{}, pcp.GnuID{}, 0, ch)
 
 	done := make(chan struct{})
 	go func() {
@@ -481,7 +473,7 @@ func TestRunStop(t *testing.T) {
 
 func TestStopIdempotent(t *testing.T) {
 	ch := newTestChannel()
-	c := New("127.0.0.1:1", pcp.GnuID{}, pcp.GnuID{}, ch)
+	c := New("127.0.0.1:1", pcp.GnuID{}, pcp.GnuID{}, 0, ch)
 
 	go c.Run()
 	time.Sleep(50 * time.Millisecond)

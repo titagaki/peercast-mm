@@ -651,7 +651,7 @@ func TestResponseEnvelope_IDEchoed(t *testing.T) {
 	}
 }
 
-func TestNonLocalhostForbidden(t *testing.T) {
+func TestNonLocalhostUnauthorized(t *testing.T) {
 	s, _, _ := newTestServer(t)
 	body := `{"jsonrpc":"2.0","method":"getVersionInfo","params":[],"id":1}`
 	req := httptest.NewRequest(http.MethodPost, "/api/1", strings.NewReader(body))
@@ -659,7 +659,7 @@ func TestNonLocalhostForbidden(t *testing.T) {
 	req.RemoteAddr = "192.168.1.100:12345"
 	w := httptest.NewRecorder()
 	s.Handler().ServeHTTP(w, req)
-	if w.Code != http.StatusForbidden {
-		t.Fatalf("expected 403 for non-localhost, got %d", w.Code)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for non-localhost, got %d", w.Code)
 	}
 }
