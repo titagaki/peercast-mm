@@ -26,6 +26,7 @@ type PCPOutputStream struct {
 	outputBase
 	br         *bufio.Reader
 	sessionID  pcp.GnuID
+	peerID     pcp.GnuID // 下流ピアの session ID（ループ防止用）
 	ch         *channel.Channel
 	bcstCh     chan *pcp.Atom
 	globalIP   uint32
@@ -48,6 +49,9 @@ func newPCPOutputStream(conn *countingConn, br *bufio.Reader, sessionID pcp.GnuI
 
 // Type implements channel.OutputStream.
 func (o *PCPOutputStream) Type() channel.OutputStreamType { return channel.OutputStreamPCP }
+
+// PeerID implements channel.OutputStream.
+func (o *PCPOutputStream) PeerID() pcp.GnuID { return o.peerID }
 
 // SendBcst enqueues a bcst atom for forwarding to this downstream peer.
 func (o *PCPOutputStream) SendBcst(atom *pcp.Atom) {
@@ -73,6 +77,7 @@ func (o *PCPOutputStream) run() {
 		return
 	}
 
+	go o.readLoop()
 	o.streamLoop(startPos)
 }
 
@@ -122,6 +127,7 @@ func (o *PCPOutputStream) handshake() (startPos uint32, err error) {
 		o.sendQuit(pcp.PCPErrorQuit + pcp.PCPErrorNotIdentified)
 		return 0, fmt.Errorf("invalid session ID: %w", err)
 	}
+	o.peerID = peerID
 	if peerID == o.sessionID {
 		o.sendQuit(pcp.PCPErrorQuit + pcp.PCPErrorLoopback)
 		return 0, fmt.Errorf("loopback connection")
@@ -239,9 +245,6 @@ func (o *PCPOutputStream) streamLoop(reqPos uint32) {
 	waitingForKeyframe := true
 
 	for {
-		// Drain incoming atoms from the peer (bcst forwarding).
-		o.tryReadBcst()
-
 		// Process notifications non-blockingly.
 		o.drainNotifications()
 
@@ -359,16 +362,24 @@ func (o *PCPOutputStream) sendBcstAtom(atom *pcp.Atom) {
 	o.conn.SetWriteDeadline(time.Time{})
 }
 
-// tryReadBcst does a non-blocking read for bcst atoms from the downstream peer.
+// readLoop reads atoms from the downstream peer in a dedicated goroutine.
 // o.br (not o.conn) must be used because o.br may have buffered bytes from the handshake.
-func (o *PCPOutputStream) tryReadBcst() {
-	o.conn.SetReadDeadline(time.Now().Add(1 * time.Millisecond))
-	if a, err := pcp.ReadAtom(o.br); err == nil {
-		if a.Tag == pcp.PCPBcst {
+// On any read error or quit atom, it closes the stream so streamLoop exits.
+func (o *PCPOutputStream) readLoop() {
+	for {
+		a, err := pcp.ReadAtom(o.br)
+		if err != nil {
+			o.Close()
+			return
+		}
+		switch a.Tag {
+		case pcp.PCPBcst:
 			o.forwardBcst(a)
+		case pcp.PCPQuit:
+			o.Close()
+			return
 		}
 	}
-	o.conn.SetReadDeadline(time.Time{})
 }
 
 func (o *PCPOutputStream) forwardBcst(a *pcp.Atom) {

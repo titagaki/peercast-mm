@@ -41,6 +41,9 @@ func (o *HTTPOutputStream) Type() channel.OutputStreamType { return channel.Outp
 // SendBcst is a no-op for HTTP streams; bcst forwarding is PCP-only.
 func (o *HTTPOutputStream) SendBcst(_ *pcp.Atom) {}
 
+// PeerID returns a zero ID; HTTP streams are never involved in bcst forwarding.
+func (o *HTTPOutputStream) PeerID() pcp.GnuID { return pcp.GnuID{} }
+
 func (o *HTTPOutputStream) run() {
 	defer slog.Info("http: viewer disconnected", "remote", o.remoteAddr, "id", o.id)
 	defer o.conn.Close()

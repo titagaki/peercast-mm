@@ -26,6 +26,9 @@ type OutputStream interface {
 	// SendBcst enqueues a bcst atom for forwarding to downstream.
 	// Only meaningful for PCP output streams; HTTP streams ignore this.
 	SendBcst(atom *pcp.Atom)
+	// PeerID returns the session ID of the remote peer.
+	// Used by Broadcast to avoid forwarding back to the same peer on multiple connections.
+	PeerID() pcp.GnuID
 	// Close terminates the output stream.
 	Close()
 	// Type returns whether this is a PCP relay or HTTP direct stream.
@@ -283,14 +286,19 @@ func (c *Channel) UptimeSeconds() uint32 {
 	return uint32(time.Since(c.StartTime).Seconds())
 }
 
-// Broadcast forwards a bcst atom to all PCP output streams except the sender.
+// Broadcast forwards a bcst atom to all PCP output streams except the sender
+// and any other connections from the same peer (same session ID).
 func (c *Channel) Broadcast(from OutputStream, atom *pcp.Atom) {
+	fromPeerID := from.PeerID()
 	c.mu.RLock()
 	outputs := append([]OutputStream(nil), c.outputs...)
 	c.mu.RUnlock()
 	for _, o := range outputs {
 		if o == from || o.Type() != OutputStreamPCP {
 			continue
+		}
+		if o.PeerID() == fromPeerID {
+			continue // 同一ピアの別接続には転送しない（ループ防止）
 		}
 		o.SendBcst(atom)
 	}
