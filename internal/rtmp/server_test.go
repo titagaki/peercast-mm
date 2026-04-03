@@ -335,8 +335,9 @@ func TestWriteData_StreamPosAdvances(t *testing.T) {
 	if packets[0].Pos != 0 {
 		t.Errorf("first packet pos: got %d, want 0", packets[0].Pos)
 	}
-	if packets[1].Pos != uint32(len(tag1)) {
-		t.Errorf("second packet pos: got %d, want %d", packets[1].Pos, len(tag1))
+	expectedPos := uint32(len(tag1) + 4) // +4 for FLV back pointer
+	if packets[1].Pos != expectedPos {
+		t.Errorf("second packet pos: got %d, want %d", packets[1].Pos, expectedPos)
 	}
 }
 

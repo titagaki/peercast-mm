@@ -134,6 +134,7 @@ func (m *mockStream) Type() channel.OutputStreamType { return m.streamType }
 func (m *mockStream) ID() int                        { return m.id }
 func (m *mockStream) RemoteAddr() string             { return m.remoteAddr }
 func (m *mockStream) SendRate() int64                { return m.sendRate }
+func (m *mockStream) PeerID() pcp.GnuID              { return pcp.GnuID{} }
 func (m *mockStream) SendBcst(_ *pcp.Atom)           {}
 
 // ---------------------------------------------------------------------------
