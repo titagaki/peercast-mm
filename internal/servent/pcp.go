@@ -369,6 +369,7 @@ func (o *PCPOutputStream) readLoop() {
 	for {
 		a, err := pcp.ReadAtom(o.br)
 		if err != nil {
+			slog.Debug("pcp: read error from downstream", "remote", o.remoteAddr, "id", o.id, "err", err)
 			o.Close()
 			return
 		}
@@ -376,8 +377,15 @@ func (o *PCPOutputStream) readLoop() {
 		case pcp.PCPBcst:
 			o.forwardBcst(a)
 		case pcp.PCPQuit:
+			code := uint32(0)
+			if v, err := a.GetInt(); err == nil {
+				code = v
+			}
+			slog.Debug("pcp: quit received from downstream", "remote", o.remoteAddr, "id", o.id, "code", code)
 			o.Close()
 			return
+		default:
+			slog.Debug("pcp: unknown atom from downstream", "remote", o.remoteAddr, "id", o.id, "tag", a.Tag)
 		}
 	}
 }
