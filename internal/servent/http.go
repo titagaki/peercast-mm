@@ -48,6 +48,18 @@ func (o *HTTPOutputStream) run() {
 	slog.Debug("http: request received", "remote", o.remoteAddr, "id", o.id, "path", req.URL.Path)
 	_ = req.Body.Close()
 
+	// Monitor the read side so we detect viewer disconnect even when no
+	// new stream data is arriving (and thus no writes are attempted).
+	go func() {
+		buf := make([]byte, 1)
+		for {
+			if _, err := o.conn.Read(buf); err != nil {
+				o.Close()
+				return
+			}
+		}
+	}()
+
 	// Send HTTP response headers immediately so the player does not time out
 	// waiting for a response while the relay chain is being established.
 	info := o.ch.Info()
