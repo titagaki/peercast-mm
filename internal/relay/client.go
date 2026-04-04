@@ -37,14 +37,26 @@ const (
 	bcstWriteTimeout = 10 * time.Second
 )
 
+// stopReason classifies why a connection ended.
+type stopReason int
+
+const (
+	stopReasonError       stopReason = iota // I/O or protocol error
+	stopReasonUnavailable                   // quit code 1003
+	stopReasonOffAir                        // quit with other code
+)
+
 // Client connects to an upstream PeerCast node and writes the received stream
 // into a local channel, reconnecting on failure.
 type Client struct {
-	upstreamAddr string
+	trackerAddr  string
 	channelID    pcp.GnuID
 	sessionID    pcp.GnuID
 	listenPort   uint16
 	ch           *channel.Channel
+
+	sourceNodes  *SourceNodeList
+	ignoredNodes *IgnoredNodeCollection
 
 	globalIP atomic.Uint32 // learned from YP oleh
 
@@ -59,13 +71,15 @@ func (c *Client) SetGlobalIP(ip uint32) {
 }
 
 // New creates a new relay Client.
-func New(upstreamAddr string, channelID, sessionID pcp.GnuID, listenPort uint16, ch *channel.Channel) *Client {
+func New(trackerAddr string, channelID, sessionID pcp.GnuID, listenPort uint16, ch *channel.Channel) *Client {
 	return &Client{
-		upstreamAddr: upstreamAddr,
+		trackerAddr:  trackerAddr,
 		channelID:    channelID,
 		sessionID:    sessionID,
 		listenPort:   listenPort,
 		ch:           ch,
+		sourceNodes:  NewSourceNodeList(),
+		ignoredNodes: NewIgnoredNodeCollection(),
 		stopCh:       make(chan struct{}),
 		doneCh:       make(chan struct{}),
 	}
@@ -73,43 +87,52 @@ func New(upstreamAddr string, channelID, sessionID pcp.GnuID, listenPort uint16,
 
 // Run connects to the upstream node and runs the receive loop, reconnecting on
 // failure with exponential backoff. It blocks until Stop is called.
-// When the upstream returns 503 with relay host hints, Run tries those hosts
-// immediately before falling back to the original address with backoff.
+//
+// Host selection follows PeerCastStation's algorithm: source nodes learned from
+// PCP HOST atoms are scored and the best candidate is chosen. Hosts that return
+// UNAVAILABLE (code 1003) or fail are temporarily ignored for 3 minutes.
 func (c *Client) Run() {
 	defer close(c.doneCh)
 	delay := retryInitial
-	originalAddr := c.upstreamAddr
-	triedAddrs := map[string]bool{}
 
 	for {
-		hitHosts, err := c.connect()
-		if err != nil {
-			slog.Error("relay: connection error", "addr", c.upstreamAddr, "err", err)
+		targetAddr := selectSourceHost(c.sourceNodes.List(), c.ignoredNodes, c.trackerAddr)
+		if targetAddr == "" {
+			// All hosts exhausted — wait with backoff.
+			select {
+			case <-c.stopCh:
+				return
+			case <-time.After(delay):
+			}
+			delay *= 2
+			if delay > retryMax {
+				delay = retryMax
+			}
+			continue
 		}
 
-		// If we received relay host hints (from a 503 response), try them
-		// before falling back to the original address with backoff.
-		nextAddr := ""
-		for _, h := range hitHosts {
-			if !triedAddrs[h] {
-				nextAddr = h
-				break
-			}
+		reason, err := c.connectTo(targetAddr)
+		if err != nil {
+			slog.Error("relay: connection error", "addr", targetAddr, "err", err)
 		}
-		if nextAddr != "" {
-			triedAddrs[c.upstreamAddr] = true
-			c.upstreamAddr = nextAddr
+
+		switch reason {
+		case stopReasonUnavailable:
+			// Host is full — ignore it and immediately try the next best.
+			c.ignoredNodes.Add(targetAddr)
+			delay = retryInitial
 			select {
 			case <-c.stopCh:
 				return
 			default:
 			}
 			continue
+		case stopReasonError:
+			// Connection or protocol error — ignore this host, try next.
+			if targetAddr != c.trackerAddr {
+				c.ignoredNodes.Add(targetAddr)
+			}
 		}
-
-		// Exhausted hints — reset to original address and apply backoff.
-		c.upstreamAddr = originalAddr
-		triedAddrs = map[string]bool{}
 
 		select {
 		case <-c.stopCh:
@@ -129,16 +152,16 @@ func (c *Client) Stop() {
 	<-c.doneCh
 }
 
-func (c *Client) connect() ([]string, error) {
-	conn, err := net.DialTimeout("tcp", c.upstreamAddr, dialTimeout)
+func (c *Client) connectTo(addr string) (stopReason, error) {
+	conn, err := net.DialTimeout("tcp", addr, dialTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("dial: %w", err)
+		return stopReasonError, fmt.Errorf("dial: %w", err)
 	}
 	defer conn.Close()
 
-	br, err := c.handshake(conn)
+	br, err := c.handshake(conn, addr)
 	if err != nil {
-		return nil, err
+		return stopReasonError, err
 	}
 
 	// Send periodic BCST HOST atoms upstream so intermediate nodes can
@@ -152,11 +175,11 @@ func (c *Client) connect() ([]string, error) {
 
 // handshake performs the PCP relay handshake over an established connection:
 // sends the HTTP GET + helo atom, reads the HTTP response + oleh atom.
-func (c *Client) handshake(conn net.Conn) (*bufio.Reader, error) {
+func (c *Client) handshake(conn net.Conn, addr string) (*bufio.Reader, error) {
 	chanIDHex := hex.EncodeToString(c.channelID[:])
 
 	// 1. Send HTTP GET /channel/<id> with PCP upgrade header.
-	req := fmt.Sprintf("GET /channel/%s HTTP/1.0\r\nHost: %s\r\nx-peercast-pcp: 1\r\nx-peercast-pos: 0\r\n\r\n", chanIDHex, c.upstreamAddr)
+	req := fmt.Sprintf("GET /channel/%s HTTP/1.0\r\nHost: %s\r\nx-peercast-pcp: 1\r\nx-peercast-pos: 0\r\n\r\n", chanIDHex, addr)
 	if _, err := io.WriteString(conn, req); err != nil {
 		return nil, fmt.Errorf("write GET: %w", err)
 	}
@@ -194,16 +217,15 @@ func (c *Client) handshake(conn net.Conn) (*bufio.Reader, error) {
 		return nil, fmt.Errorf("expected oleh, got %s", oleh.Tag)
 	}
 
-	slog.Info("relay: connected", "addr", c.upstreamAddr, "channel", chanIDHex)
+	slog.Info("relay: connected", "addr", addr, "channel", chanIDHex)
 	return br, nil
 }
 
-func (c *Client) receiveLoop(conn net.Conn, br *bufio.Reader) ([]string, error) {
-	var hitHosts []string
+func (c *Client) receiveLoop(conn net.Conn, br *bufio.Reader) (stopReason, error) {
 	for {
 		select {
 		case <-c.stopCh:
-			return nil, nil
+			return stopReasonOffAir, nil
 		default:
 		}
 
@@ -213,96 +235,30 @@ func (c *Client) receiveLoop(conn net.Conn, br *bufio.Reader) ([]string, error) 
 		if err != nil {
 			select {
 			case <-c.stopCh:
-				return nil, nil
+				return stopReasonOffAir, nil
 			default:
 			}
-			return nil, fmt.Errorf("read atom: %w", err)
+			return stopReasonError, fmt.Errorf("read atom: %w", err)
 		}
 
 		switch atom.Tag {
 		case pcp.PCPChan:
 			c.handleChan(atom)
 		case pcp.PCPHost:
-			if addr := parseRelayHost(atom); addr != "" {
-				hitHosts = append(hitHosts, addr)
+			if node, ok := parseSourceNode(atom); ok {
+				c.sourceNodes.Add(node)
 			}
 		case pcp.PCPQuit:
 			code, _ := atom.GetInt()
-			return hitHosts, fmt.Errorf("quit from upstream (code %d)", code)
+			reason := stopReasonOffAir
+			if code == 1003 {
+				reason = stopReasonUnavailable
+			}
+			return reason, fmt.Errorf("quit from upstream (code %d)", code)
 		}
 	}
 }
 
-const (
-	// pcpHostFlagsRelay is set when the node can forward the stream.
-	pcpHostFlagsRelay = byte(0x02)
-	// pcpHostFlagsPush is set when the node is firewalled and needs a GIV
-	// (push) to accept incoming connections. peercast-mi does not implement
-	// GIV, so these nodes are skipped.
-	pcpHostFlagsPush = byte(0x08)
-)
-
-// parseRelayHost extracts a "host:port" string from a PCPHost atom.
-//
-// A PCPHost atom contains TWO consecutive IP/port pairs: rhost[0] is the
-// external (public) address, rhost[1] is the internal (local) address.
-// We return the first non-unspecified, non-loopback address found.
-//
-// Returns "" when the host cannot be used (firewalled / no relay flag /
-// no valid address).
-func parseRelayHost(atom *pcp.Atom) string {
-	// Collect up to two IP/port pairs in order.
-	var ips [2]uint32
-	var ports [2]uint16
-	ipIdx, portIdx := 0, 0
-	var flags byte
-
-	for _, child := range atom.Children() {
-		switch child.Tag {
-		case pcp.PCPHostIP:
-			if ipIdx < 2 {
-				if v, err := child.GetInt(); err == nil {
-					ips[ipIdx] = v
-					ipIdx++
-				}
-			}
-		case pcp.PCPHostPort:
-			if portIdx < 2 {
-				if v, err := child.GetShort(); err == nil {
-					ports[portIdx] = v
-					portIdx++
-				}
-			}
-		case pcp.PCPHostFlags1:
-			if v, err := child.GetByte(); err == nil {
-				flags = v
-			}
-		}
-	}
-
-	// Skip firewalled nodes (PUSH flag) -- they require GIV which is not implemented.
-	if flags&pcpHostFlagsPush != 0 {
-		return ""
-	}
-	if flags&pcpHostFlagsRelay == 0 {
-		return ""
-	}
-
-	// Try each IP/port pair in order; return the first usable address.
-	// PCP stores IPv4 via writeInt (little-endian on wire), so GetInt() gives
-	// the big-endian (network-byte-order) value -- restore it with BigEndian.
-	for i := 0; i < 2; i++ {
-		if ports[i] == 0 {
-			continue
-		}
-		ip := pcp.IPv4FromUint32(ips[i])
-		if ip.IsUnspecified() || ip.IsLoopback() {
-			continue
-		}
-		return fmt.Sprintf("%s:%d", ip, ports[i])
-	}
-	return ""
-}
 
 func (c *Client) handleChan(atom *pcp.Atom) {
 	ch, err := pcp.ParseChanPacket(atom)

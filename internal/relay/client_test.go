@@ -357,11 +357,11 @@ func TestConnect_FullHandshake(t *testing.T) {
 	}()
 
 	c := New(ln.Addr().String(), channelID, sessionID, 0, ch)
-	_, err = c.connect()
-	// connect returns a "quit" error because the fake upstream sends a quit atom
+	_, err = c.connectTo(ln.Addr().String())
+	// connectTo returns a "quit" error because the fake upstream sends a quit atom
 	// to end the session — this is expected.
 	if err != nil && !strings.Contains(err.Error(), "quit from upstream") {
-		t.Fatalf("connect: %v", err)
+		t.Fatalf("connectTo: %v", err)
 	}
 
 	select {
