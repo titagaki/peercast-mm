@@ -190,8 +190,11 @@ config.toml の `peercast_port` / `rtmp_port` の値を返す。
     "status": {
       "status": "Receiving",
       "source": "rtmp://127.0.0.1:1935/live/sk_a1b2c3...",
-      "totalDirects": 1,
+      "uptime": 120,
+      "localRelays": 2,
+      "localDirects": 1,
       "totalRelays": 2,
+      "totalDirects": 1,
       "isBroadcasting": true,
       "isRelayFull": false,
       "isDirectFull": false,
@@ -200,21 +203,20 @@ config.toml の `peercast_port` / `rtmp_port` の値を返す。
     "info": {
       "name": "チャンネル名",
       "url": "https://example.com",
+      "genre": "ジャンル",
       "desc": "説明",
       "comment": "",
-      "genre": "ジャンル",
-      "type": "FLV",
-      "bitrate": 500
+      "bitrate": 500,
+      "contentType": "FLV",
+      "mimeType": "video/x-flv"
     },
     "track": {
-      "title": "",
+      "name": "",
+      "genre": "",
+      "album": "",
       "creator": "",
-      "url": "",
-      "album": ""
-    },
-    "yellowPages": [
-      { "yellowPageId": 0, "name": "0yp" }
-    ]
+      "url": ""
+    }
   }
 ]
 ```
@@ -231,25 +233,21 @@ config.toml の `peercast_port` / `rtmp_port` の値を返す。
   "info": {
     "name": "チャンネル名",
     "url": "https://example.com",
+    "genre": "ジャンル",
     "desc": "説明",
     "comment": "",
-    "genre": "ジャンル",
-    "type": "FLV",
-    "bitrate": 500
+    "bitrate": 500,
+    "contentType": "FLV",
+    "mimeType": "video/x-flv"
   },
   "track": {
-    "title": "",
+    "name": "",
+    "genre": "",
+    "album": "",
     "creator": "",
-    "url": "",
-    "album": ""
-  },
-  "yellowPages": [
-    { "yellowPageId": 0, "name": "0yp" }
-  ]
+    "url": ""
+  }
 }
-```
-
-`yellowPages` は config.toml の `[[yp]]` エントリに対応する。各エントリに 0 始まりの `yellowPageId` を付与する。
 
 ---
 
@@ -262,8 +260,11 @@ config.toml の `peercast_port` / `rtmp_port` の値を返す。
 {
   "status": "Receiving",
   "source": "rtmp://127.0.0.1:1935/live/sk_a1b2c3...",
-  "totalDirects": 1,
+  "uptime": 120,
+  "localRelays": 2,
+  "localDirects": 1,
   "totalRelays": 2,
+  "totalDirects": 1,
   "isBroadcasting": true,
   "isRelayFull": false,
   "isDirectFull": false,
@@ -275,8 +276,11 @@ config.toml の `peercast_port` / `rtmp_port` の値を返す。
 |---|---|
 | `status` | `"Receiving"` (データ受信中) または `"Idle"` (未受信)。`Channel.HasData()` に基づく |
 | `source` | ブロードキャストチャンネル: `rtmp://127.0.0.1:<rtmpPort>/live/<streamKey>`。リレーチャンネル: 上流ノードの `host:port` |
-| `totalDirects` | HTTP 直接視聴接続数（`Channel.NumListeners()`） |
-| `totalRelays` | PCP リレー接続数（`Channel.NumRelays()`） |
+| `uptime` | チャンネル開始からの経過秒数（`Channel.UptimeSeconds()`） |
+| `localRelays` | 自ノードの PCP リレー接続数（`Channel.NumRelays()`） |
+| `localDirects` | 自ノードの HTTP 直接視聴接続数（`Channel.NumListeners()`） |
+| `totalRelays` | PCP リレー接続数（現時点では `localRelays` と同値） |
+| `totalDirects` | HTTP 直接視聴接続数（現時点では `localDirects` と同値） |
 | `isBroadcasting` | ブロードキャストチャンネル (RTMP ソース) なら `true`、リレーチャンネルなら `false` |
 | `isRelayFull` | リレー接続が上限に達していれば `true`（`Channel.IsRelayFull()`）。上限未設定時は常に `false` |
 | `isDirectFull` | 直接視聴接続が上限に達していれば `true`（`Channel.IsDirectFull()`）。上限未設定時は常に `false` |

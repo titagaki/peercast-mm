@@ -233,11 +233,6 @@ func TestGetChannels(t *testing.T) {
 	if !status["isBroadcasting"].(bool) {
 		t.Fatal("isBroadcasting should be true for broadcast channel")
 	}
-	// yellowPages
-	yps := ch["yellowPages"].([]interface{})
-	if len(yps) != 1 {
-		t.Fatalf("expected 1 yp, got %d", len(yps))
-	}
 }
 
 // ---------------------------------------------------------------------------
@@ -254,14 +249,6 @@ func TestGetChannelInfo_Valid(t *testing.T) {
 	}
 	if int(info["bitrate"].(float64)) != 500 {
 		t.Fatalf("unexpected bitrate: %v", info["bitrate"])
-	}
-	yps := result["yellowPages"].([]interface{})
-	if len(yps) != 1 {
-		t.Fatalf("expected 1 yp, got %d", len(yps))
-	}
-	yp := yps[0].(map[string]interface{})
-	if int(yp["yellowPageId"].(float64)) != 0 {
-		t.Fatalf("expected yellowPageId 0, got %v", yp["yellowPageId"])
 	}
 }
 

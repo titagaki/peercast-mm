@@ -34,32 +34,32 @@ type trackInfoArg struct {
 }
 
 type chanInfoResult struct {
-	Name    string `json:"name"`
-	URL     string `json:"url"`
-	Desc    string `json:"desc"`
-	Comment string `json:"comment"`
-	Genre   string `json:"genre"`
-	Type    string `json:"type"`
-	Bitrate uint32 `json:"bitrate"`
+	Name        string `json:"name"`
+	URL         string `json:"url"`
+	Genre       string `json:"genre"`
+	Desc        string `json:"desc"`
+	Comment     string `json:"comment"`
+	Bitrate     uint32 `json:"bitrate"`
+	ContentType string `json:"contentType"`
+	MIMEType    string `json:"mimeType"`
 }
 
 type trackInfoResult struct {
-	Title   string `json:"title"`
+	Name    string `json:"name"`
+	Genre   string `json:"genre"`
+	Album   string `json:"album"`
 	Creator string `json:"creator"`
 	URL     string `json:"url"`
-	Album   string `json:"album"`
-}
-
-type ypRef struct {
-	YellowPageID int    `json:"yellowPageId"`
-	Name         string `json:"name"`
 }
 
 type chanStatusResult struct {
 	Status         string `json:"status"`
 	Source         string `json:"source"`
-	TotalDirects   int    `json:"totalDirects"`
+	Uptime         uint32 `json:"uptime"`
+	LocalRelays    int    `json:"localRelays"`
+	LocalDirects   int    `json:"localDirects"`
 	TotalRelays    int    `json:"totalRelays"`
+	TotalDirects   int    `json:"totalDirects"`
 	IsBroadcasting bool   `json:"isBroadcasting"`
 	IsRelayFull    bool   `json:"isRelayFull"`
 	IsDirectFull   bool   `json:"isDirectFull"`
@@ -73,32 +73,26 @@ type chanStatusResult struct {
 func (s *Server) buildChanInfo(ch *channel.Channel) chanInfoResult {
 	info := ch.Info()
 	return chanInfoResult{
-		Name:    info.Name,
-		URL:     info.URL,
-		Desc:    info.Desc,
-		Comment: info.Comment,
-		Genre:   info.Genre,
-		Type:    info.Type,
-		Bitrate: info.Bitrate,
+		Name:        info.Name,
+		URL:         info.URL,
+		Genre:       info.Genre,
+		Desc:        info.Desc,
+		Comment:     info.Comment,
+		Bitrate:     info.Bitrate,
+		ContentType: info.Type,
+		MIMEType:    info.MIMEType,
 	}
 }
 
 func (s *Server) buildTrackInfo(ch *channel.Channel) trackInfoResult {
 	track := ch.Track()
 	return trackInfoResult{
-		Title:   track.Title,
+		Name:    track.Title,
+		Genre:   "",
+		Album:   track.Album,
 		Creator: track.Creator,
 		URL:     track.URL,
-		Album:   track.Album,
 	}
-}
-
-func (s *Server) buildYPRefs() []ypRef {
-	refs := make([]ypRef, len(s.cfg.YPs))
-	for i, entry := range s.cfg.YPs {
-		refs[i] = ypRef{YellowPageID: i, Name: entry.Name}
-	}
-	return refs
 }
 
 func (s *Server) buildStatus(ch *channel.Channel) chanStatusResult {
@@ -117,8 +111,11 @@ func (s *Server) buildStatus(ch *channel.Channel) chanStatusResult {
 	return chanStatusResult{
 		Status:         status,
 		Source:         source,
-		TotalDirects:   ch.NumListeners(),
+		Uptime:         ch.UptimeSeconds(),
+		LocalRelays:    ch.NumRelays(),
+		LocalDirects:   ch.NumListeners(),
 		TotalRelays:    ch.NumRelays(),
+		TotalDirects:   ch.NumListeners(),
 		IsBroadcasting: ch.IsBroadcasting(),
 		IsRelayFull:    ch.IsRelayFull(s.cfg.MaxRelays),
 		IsDirectFull:   ch.IsDirectFull(s.cfg.MaxListeners),
@@ -206,21 +203,19 @@ func (s *Server) broadcastChannel(params json.RawMessage) (interface{}, *rpcErro
 
 func (s *Server) getChannels() (interface{}, *rpcError) {
 	type chanEntry struct {
-		ChannelID   string           `json:"channelId"`
-		Status      chanStatusResult `json:"status"`
-		Info        chanInfoResult   `json:"info"`
-		Track       trackInfoResult  `json:"track"`
-		YellowPages []ypRef          `json:"yellowPages"`
+		ChannelID string           `json:"channelId"`
+		Status    chanStatusResult `json:"status"`
+		Info      chanInfoResult   `json:"info"`
+		Track     trackInfoResult  `json:"track"`
 	}
 	channels := s.mgr.List()
 	entries := make([]chanEntry, len(channels))
 	for i, ch := range channels {
 		entries[i] = chanEntry{
-			ChannelID:   gnuIDString(ch.ID),
-			Status:      s.buildStatus(ch),
-			Info:        s.buildChanInfo(ch),
-			Track:       s.buildTrackInfo(ch),
-			YellowPages: s.buildYPRefs(),
+			ChannelID: gnuIDString(ch.ID),
+			Status:    s.buildStatus(ch),
+			Info:      s.buildChanInfo(ch),
+			Track:     s.buildTrackInfo(ch),
 		}
 	}
 	return entries, nil
@@ -228,14 +223,12 @@ func (s *Server) getChannels() (interface{}, *rpcError) {
 
 func (s *Server) getChannelInfo(ch *channel.Channel) (interface{}, *rpcError) {
 	type result struct {
-		Info        chanInfoResult  `json:"info"`
-		Track       trackInfoResult `json:"track"`
-		YellowPages []ypRef         `json:"yellowPages"`
+		Info  chanInfoResult  `json:"info"`
+		Track trackInfoResult `json:"track"`
 	}
 	return result{
-		Info:        s.buildChanInfo(ch),
-		Track:       s.buildTrackInfo(ch),
-		YellowPages: s.buildYPRefs(),
+		Info:  s.buildChanInfo(ch),
+		Track: s.buildTrackInfo(ch),
 	}, nil
 }
 
