@@ -28,7 +28,6 @@ type ChannelManager interface {
 	GetByID(channelID pcp.GnuID) (*channel.Channel, bool)
 	StreamKeyByID(channelID pcp.GnuID) (string, bool)
 	List() []*channel.Channel
-	AddRelayChannel(ch *channel.Channel, r channel.RelayHandle)
 }
 
 // Server handles JSON-RPC 2.0 requests at POST /api/1.
@@ -186,9 +185,7 @@ func (s *Server) dispatch(method string, params json.RawMessage) (interface{}, *
 		return s.getYellowPages()
 	case "getChannelRelayTree":
 		return s.withChannel(params, s.getChannelRelayTree)
-	case "relayChannel":
-		return s.relayChannel(params)
-	default:
+default:
 		return nil, &rpcError{Code: errCodeMethodNotFound, Message: fmt.Sprintf("method not found: %s", method)}
 	}
 }

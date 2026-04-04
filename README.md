@@ -153,26 +153,6 @@ curl -s -X POST http://localhost:7144/api/1 \
 
 チャンネルが停止してもストリームキーは残るため、手順 3 から繰り返せる。
 
-## リレーチャンネルの開始
-
-他の PeerCast ノードからストリームを受け取って中継する。チャンネル ID と上流ノードのアドレスを指定する。
-
-```sh
-curl -s -X POST http://localhost:7144/api/1 \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "jsonrpc":"2.0","method":"relayChannel","params":[{
-      "upstreamAddr": "192.168.1.10:7144",
-      "channelId":    "0123456789abcdef0123456789abcdef"
-    }],"id":1}'
-```
-
-```json
-{"jsonrpc":"2.0","id":1,"result":{"channelId":"0123456789abcdef0123456789abcdef"}}
-```
-
-接続失敗時は指数バックオフ（5 秒〜120 秒）で自動再接続する。`stopChannel` で停止できる。
-
 ## 視聴・リレー
 
 peercast-mi はポート 7144 で待ち受ける。
@@ -182,7 +162,7 @@ peercast-mi はポート 7144 で待ち受ける。
 | `http://localhost:7144/stream/<channelId>` | メディアプレイヤーで直接視聴 |
 | `http://localhost:7144/channel/<channelId>` | PeerCast ノードからのリレー接続 |
 
-`channelId` は `broadcastChannel` / `relayChannel` の返却値、または `getChannels` で確認できる。
+`channelId` は `broadcastChannel` の返却値、または `getChannels` で確認できる。
 
 ## JSON-RPC API
 
@@ -192,7 +172,6 @@ peercast-mi はポート 7144 で待ち受ける。
 |---|---|
 | `issueStreamKey` | ストリームキーを発行する |
 | `broadcastChannel` | ブロードキャストチャンネルを開始する |
-| `relayChannel` | リレーチャンネルを開始する |
 | `getChannels` | チャンネルの一覧 |
 | `getChannelInfo` | チャンネル情報を取得 |
 | `getChannelStatus` | チャンネルステータスを取得 |

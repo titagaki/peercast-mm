@@ -155,18 +155,19 @@ ChannelID = peercast-yt 互換 XOR アルゴリズム
 > エンコーダー接続 (手順 2) と broadcastChannel 呼び出し (手順 3) は順不同。
 > broadcastChannel より先に RTMP が来た場合、データはチャンネルが作成されるまで静かにドロップされる。
 
-### 4.3 リレーチャンネル開始フロー (API 経由)
+### 4.3 リレーチャンネル開始フロー (オンデマンド)
 
 ```
-1. クライアントが relayChannel({upstreamAddr, channelId}) を呼ぶ
-2. Channel (IsBroadcasting=false) を生成、Manager に登録
-3. RelayClient を生成し、ゴルーチンとして Run() を起動
-4. RelayClient が upstreamAddr に TCP 接続
-5. HTTP GET /channel/<channelId> + pcp\n magic + helo を送信
-6. 上流から HTTP 200 + oleh + 初期 chan アトム (info/track/header) を受信
-7. Channel に info/track/header をセット
-8. 上流からの pkt アトムを Channel.ContentBuffer に継続的に書き込む
-9. YPClient が次の bcst サイクルで新チャンネルを YP に通知
+1. プレイヤーまたは下流ノードが /stream/<channelId> または /channel/<channelId> にアクセス
+2. Listener がチャンネル未登録を検出し、上流ノードへのリレー接続を開始
+3. Channel (IsBroadcasting=false) を生成、Manager に登録
+4. RelayClient を生成し、ゴルーチンとして Run() を起動
+5. RelayClient が upstreamAddr に TCP 接続
+6. HTTP GET /channel/<channelId> + pcp\n magic + helo を送信
+7. 上流から HTTP 200 + oleh + 初期 chan アトム (info/track/header) を受信
+8. Channel に info/track/header をセット
+9. 上流からの pkt アトムを Channel.ContentBuffer に継続的に書き込む
+10. YPClient が次の bcst サイクルで新チャンネルを YP に通知
 ```
 
 > 接続失敗・切断時は RelayClient が指数バックオフ (5 秒〜120 秒) で自動再接続する。

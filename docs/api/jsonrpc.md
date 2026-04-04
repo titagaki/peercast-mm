@@ -153,40 +153,6 @@ ChannelID は入力パラメータから決定論的に生成される。同じ 
 
 ---
 
-### `relayChannel`
-
-**パラメータ:** `[{ upstreamAddr, channelId }]`
-
-指定した上流 PeerCast ノードからストリームを受け取るリレーチャンネルを開始する。
-
-```json
-[{
-  "upstreamAddr": "192.168.1.10:7144",
-  "channelId":    "0123456789abcdef0123456789abcdef"
-}]
-```
-
-| フィールド | 説明 |
-|---|---|
-| `upstreamAddr` | 上流ノードの `host:port`。省略した場合は config の先頭 YP アドレスを使用 |
-| `channelId` | リレーするチャンネルの ID (32 文字 hex) |
-
-**返却値:**
-```json
-{ "channelId": "0123456789abcdef0123456789abcdef" }
-```
-
-接続は非同期で確立される。返却直後はまだ上流に接続していない場合がある。`getChannelStatus` の `isReceiving` が `true` になれば受信開始。
-
-接続失敗・切断時は指数バックオフ (5 秒〜120 秒) で自動再接続する。
-
-**エラー条件:**
-- `channelId` が 32 文字 hex でない → `-32602`
-- 同じ `channelId` のチャンネルが既に存在する → `-32602`
-- `upstreamAddr` が空かつ config に YP が設定されていない → `-32602`
-
----
-
 ### `getVersionInfo`
 
 **パラメータ:** なし

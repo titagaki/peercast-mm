@@ -397,9 +397,6 @@
       <button class="method-btn" onclick="selectMethod('broadcastChannel')" data-method="broadcastChannel">
         <span class="method-tag tag-post">POST</span>broadcastChannel
       </button>
-      <button class="method-btn" onclick="selectMethod('relayChannel')" data-method="relayChannel">
-        <span class="method-tag tag-post">POST</span>relayChannel
-      </button>
     </div>
     <div class="sidebar-section">
       <div class="sidebar-label">Channels</div>
@@ -621,14 +618,6 @@ const FORM_HTML = {
     </div>
     ` + infoTrackHtml(3000),
 
-  relayChannel: `
-    <div class="field-group">
-      <label class="field-label">upstreamAddr</label>
-      <input id="f_upstreamAddr" class="field-input" type="text" placeholder="192.168.1.10:7144" />
-      <div class="field-hint">空の場合は config の先頭 YP アドレスを使用</div>
-    </div>
-    ${channelIdField.replace('</div>', '<div class="field-hint">接続は非同期。isReceiving で受信確認を</div></div>')}`,
-
   getChannelInfo: channelIdField,
   getChannelStatus: channelIdField,
   stopChannel: channelIdField,
@@ -666,7 +655,6 @@ function buildParams(method) {
     case 'issueStreamKey':      return [g('f_accountName'), g('f_streamKey')];
     case 'revokeStreamKey':     return [g('f_accountName')];
     case 'broadcastChannel':    return [{ streamKey: g('f_sourceStreamKey'), info: infoObj(), track: trackObj() }];
-    case 'relayChannel':        return [{ upstreamAddr: g('f_upstreamAddr'), channelId: g('f_channelId') }];
     case 'setChannelInfo':      return [g('f_channelId'), infoObj(), trackObj()];
     case 'stopChannelConnection': return [g('f_channelId'), gi('f_connectionId')];
     case 'getChannelInfo': case 'getChannelStatus': case 'stopChannel':

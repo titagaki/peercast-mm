@@ -1,70 +1,12 @@
 package jsonrpc
 
 import (
-	"encoding/hex"
-	"encoding/json"
-	"log/slog"
 	"net"
 	"strconv"
 
-	"github.com/titagaki/peercast-pcp/pcp"
-
 	"github.com/titagaki/peercast-mi/internal/channel"
-	"github.com/titagaki/peercast-mi/internal/relay"
 	"github.com/titagaki/peercast-mi/internal/version"
 )
-
-// ---------------------------------------------------------------------------
-// relayChannel
-// ---------------------------------------------------------------------------
-
-type relayChannelParam struct {
-	UpstreamAddr string `json:"upstreamAddr"` // "host:port"
-	ChannelID    string `json:"channelId"`    // 32-char hex
-}
-
-func (s *Server) relayChannel(params json.RawMessage) (interface{}, *rpcError) {
-	var args []relayChannelParam
-	if err := json.Unmarshal(params, &args); err != nil || len(args) == 0 {
-		return nil, &rpcError{Code: errCodeInvalidParams, Message: "expected [{upstreamAddr, channelId}]"}
-	}
-	p := args[0]
-
-	upstreamAddr := p.UpstreamAddr
-	if upstreamAddr == "" {
-		// Auto-discover: use the first configured YP as the upstream source.
-		if len(s.cfg.YPs) == 0 {
-			return nil, &rpcError{Code: errCodeInvalidParams, Message: "upstreamAddr is required when no YP is configured"}
-		}
-		hp, err := s.cfg.YPs[0].HostPort()
-		if err != nil {
-			return nil, &rpcError{Code: errCodeInternal, Message: "failed to resolve YP address"}
-		}
-		upstreamAddr = hp
-		slog.Info("relay: auto-discovered upstream from YP", "addr", upstreamAddr)
-	}
-
-	b, err := hex.DecodeString(p.ChannelID)
-	if err != nil || len(b) != 16 {
-		return nil, &rpcError{Code: errCodeInvalidParams, Message: "channelId must be a 32-char hex string"}
-	}
-	var chanID pcp.GnuID
-	copy(chanID[:], b)
-
-	if _, ok := s.mgr.GetByID(chanID); ok {
-		return nil, &rpcError{Code: errCodeInvalidParams, Message: "channel already active"}
-	}
-
-	ch := channel.New(chanID, pcp.GnuID{}, 0)
-	ch.SetSource(upstreamAddr)
-	ch.SetUpstreamAddr(upstreamAddr)
-	client := relay.New(upstreamAddr, chanID, s.sessionID, uint16(s.cfg.PeercastPort), ch)
-	s.mgr.AddRelayChannel(ch, client)
-	go client.Run()
-
-	slog.Info("relay: started", "addr", upstreamAddr, "channel", p.ChannelID)
-	return map[string]string{"channelId": gnuIDString(chanID)}, nil
-}
 
 // ---------------------------------------------------------------------------
 // getChannelRelayTree

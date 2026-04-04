@@ -555,7 +555,6 @@ type ChannelManager interface {
     GetByID(channelID pcp.GnuID) (*channel.Channel, bool)
     StreamKeyByID(channelID pcp.GnuID) (string, bool)
     List() []*channel.Channel
-    AddRelayChannel(ch *channel.Channel, r channel.RelayHandle)
 }
 ```
 
