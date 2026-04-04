@@ -52,6 +52,10 @@ type Config struct {
 	// ContentBufferSeconds はコンテンツリングバッファが保持する秒数。
 	// ビットレートからパケット数を自動計算する。0 はデフォルト (8秒) を使用。
 	ContentBufferSeconds float64 `toml:"content_buffer_seconds"`
+	// ChannelCleanupMinutes はリレーチャンネルの自動切断タイムアウト (分)。
+	// 視聴・リレーのないリレーチャンネルがこの時間継続すると自動削除される。
+	// 0 は自動切断を無効にする。デフォルト 20 分。
+	ChannelCleanupMinutes int `toml:"channel_cleanup_minutes"`
 	// AdminUser / AdminPass は非 localhost からの JSON-RPC アクセスに使う
 	// Basic 認証の資格情報。どちらか空の場合は非 localhost を拒否する。
 	AdminUser string `toml:"admin_user"`
@@ -61,9 +65,10 @@ type Config struct {
 
 func defaults() Config {
 	return Config{
-		RTMPPort:     1935,
-		PeercastPort: 7144,
-		LogLevel:     "info",
+		RTMPPort:              1935,
+		PeercastPort:          7144,
+		LogLevel:              "info",
+		ChannelCleanupMinutes: 20,
 	}
 }
 

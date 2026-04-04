@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sync/atomic"
 	"syscall"
+	"time"
 
 	"github.com/titagaki/peercast-pcp/pcp"
 
@@ -116,6 +117,13 @@ func main() {
 	apiServer := jsonrpc.New(sessionID, mgr, cfg, ypBumper)
 	listener.SetAPIHandler(apiServer.Handler())
 	slog.Info("api: JSON-RPC ready", "port", cfg.PeercastPort)
+
+	// Start channel cleaner for idle relay channels.
+	if cfg.ChannelCleanupMinutes > 0 {
+		cleaner := channel.NewCleaner(mgr, time.Duration(cfg.ChannelCleanupMinutes)*time.Minute)
+		go cleaner.Run()
+		defer cleaner.Stop()
+	}
 
 	// Start RTMP server.
 	rtmpServer := rtmp.NewServer(mgr, cfg.RTMPPort)
