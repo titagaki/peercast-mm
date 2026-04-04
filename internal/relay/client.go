@@ -41,9 +41,10 @@ const (
 type stopReason int
 
 const (
-	stopReasonError       stopReason = iota // I/O or protocol error
-	stopReasonUnavailable                   // quit code 1003
-	stopReasonOffAir                        // quit with other code
+	stopReasonError         stopReason = iota // I/O or protocol error (no data received)
+	stopReasonErrorAfterData                  // I/O error after successfully receiving data
+	stopReasonUnavailable                     // quit code 1003
+	stopReasonOffAir                          // quit with other code
 )
 
 // Client connects to an upstream PeerCast node and writes the received stream
@@ -117,6 +118,10 @@ func (c *Client) Run() {
 		}
 
 		switch reason {
+		case stopReasonOffAir:
+			// Channel is off-air — stop retrying (matches PeerCastStation).
+			slog.Info("relay: channel off-air, stopping", "addr", targetAddr)
+			return
 		case stopReasonUnavailable:
 			// Host is full — ignore it and immediately try the next best.
 			c.ignoredNodes.Add(targetAddr)
@@ -127,6 +132,9 @@ func (c *Client) Run() {
 			default:
 			}
 			continue
+		case stopReasonErrorAfterData:
+			// Connection was productive but lost — reset backoff and retry.
+			delay = retryInitial
 		case stopReasonError:
 			// Connection or protocol error — ignore this host, try next.
 			if targetAddr != c.trackerAddr {
@@ -222,6 +230,7 @@ func (c *Client) handshake(conn net.Conn, addr string) (*bufio.Reader, error) {
 }
 
 func (c *Client) receiveLoop(conn net.Conn, br *bufio.Reader) (stopReason, error) {
+	receivedData := false
 	for {
 		select {
 		case <-c.stopCh:
@@ -238,12 +247,17 @@ func (c *Client) receiveLoop(conn net.Conn, br *bufio.Reader) (stopReason, error
 				return stopReasonOffAir, nil
 			default:
 			}
-			return stopReasonError, fmt.Errorf("read atom: %w", err)
+			reason := stopReasonError
+			if receivedData {
+				reason = stopReasonErrorAfterData
+			}
+			return reason, fmt.Errorf("read atom: %w", err)
 		}
 
 		switch atom.Tag {
 		case pcp.PCPChan:
 			c.handleChan(atom)
+			receivedData = true
 		case pcp.PCPHost:
 			if node, ok := parseSourceNode(atom); ok {
 				c.sourceNodes.Add(node)
