@@ -307,14 +307,14 @@ config.toml の `peercast_port` / `rtmp_port` の値を返す。
 
 | フィールド | 説明 |
 |---|---|
-| `status` | `"Receiving"` (データ受信中) または `"Idle"` (未受信)。`ContentBuffer.HasData()` に基づく |
+| `status` | `"Receiving"` (データ受信中) または `"Idle"` (未受信)。`Channel.HasData()` に基づく |
 | `source` | ブロードキャストチャンネル: `rtmp://127.0.0.1:<rtmpPort>/live/<streamKey>`。リレーチャンネル: 上流ノードの `host:port` |
 | `totalDirects` | HTTP 直接視聴接続数（`Channel.NumListeners()`） |
 | `totalRelays` | PCP リレー接続数（`Channel.NumRelays()`） |
 | `isBroadcasting` | ブロードキャストチャンネル (RTMP ソース) なら `true`、リレーチャンネルなら `false` |
 | `isRelayFull` | リレー接続が上限に達していれば `true`（`Channel.IsRelayFull()`）。上限未設定時は常に `false` |
 | `isDirectFull` | 直接視聴接続が上限に達していれば `true`（`Channel.IsDirectFull()`）。上限未設定時は常に `false` |
-| `isReceiving` | ストリームデータを受信済みなら `true`（`ContentBuffer.HasData()`） |
+| `isReceiving` | ストリームデータを受信済みなら `true`（`Channel.HasData()`） |
 
 ---
 

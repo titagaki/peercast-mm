@@ -10,9 +10,11 @@ internal/
   id/id.go                 SessionID / BroadcastID / ChannelID 生成
   channel/
     info.go                ChannelInfo / TrackInfo
-    content.go             ContentBuffer (64件リングバッファ)
+    content.go             ContentBuffer (リングバッファ)
     channel.go             Channel (OutputStream ファンアウト、ブロードキャスト/リレー共通)
-    manager.go             Manager (ストリームキー・チャンネル・リレークライアント管理)
+    manager.go             Manager (チャンネル・リレークライアント管理、StreamKeyStore に委譲)
+    stream_key_store.go    StreamKeyStore (ストリームキーの発行・失効・永続化)
+  pcputil/host.go          BuildHostAtom (PCP Host アトム構築ユーティリティ)
   rtmp/server.go           RTMPServer (yutopp/go-rtmp ラッパー、FLV タグ変換)
   relay/client.go          RelayClient (上流 PCP ノードへの接続・ストリーム受信)
   yp/client.go             YPClient (COUT 接続・bcst ループ・指数バックオフ再接続)
@@ -20,6 +22,13 @@ internal/
     listener.go            Listener (ポート 7144、プロトコル識別)
     pcp.go                 PCPOutputStream (下流リレーノードへの PCP 送信)
     http.go                HTTPOutputStream (メディアプレイヤーへの HTTP 送信)
+    rate.go                byteCounter / countingConn (送信レート計測)
+  jsonrpc/
+    server.go              JSON-RPC API サーバー (ChannelManager インターフェース経由)
+    handler_channel.go     チャンネル管理 API ハンドラー
+    handler_connection.go  接続管理 API ハンドラー
+    handler_relay.go       リレー管理 API ハンドラー
+    handler_yp.go          YP 情報 API ハンドラー
 docs/
   spec.md                  実装仕様書 (概要・アーキテクチャ・ライフサイクル)
   spec-components.md       実装仕様書 (コンポーネント詳細)
