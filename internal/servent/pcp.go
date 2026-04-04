@@ -496,24 +496,13 @@ func buildChanAtom(chanID, bcID pcp.GnuID, info channel.ChannelInfo, track chann
 }
 
 func buildChanInfoAtom(info channel.ChannelInfo) *pcp.Atom {
-	return pcp.NewParentAtom(pcp.PCPChanInfo,
-		pcp.NewStringAtom(pcp.PCPChanInfoName, info.Name),
-		pcp.NewStringAtom(pcp.PCPChanInfoURL, info.URL),
-		pcp.NewStringAtom(pcp.PCPChanInfoDesc, info.Desc),
-		pcp.NewStringAtom(pcp.PCPChanInfoComment, info.Comment),
-		pcp.NewStringAtom(pcp.PCPChanInfoGenre, info.Genre),
-		pcp.NewStringAtom(pcp.PCPChanInfoType, info.Type),
-		pcp.NewIntAtom(pcp.PCPChanInfoBitrate, info.Bitrate),
-	)
+	ci := info.ToPCP()
+	return ci.BuildAtom()
 }
 
 func buildChanTrackAtom(track channel.TrackInfo) *pcp.Atom {
-	return pcp.NewParentAtom(pcp.PCPChanTrack,
-		pcp.NewStringAtom(pcp.PCPChanTrackTitle, track.Title),
-		pcp.NewStringAtom(pcp.PCPChanTrackCreator, track.Creator),
-		pcp.NewStringAtom(pcp.PCPChanTrackURL, track.URL),
-		pcp.NewStringAtom(pcp.PCPChanTrackAlbum, track.Album),
-	)
+	ct := track.ToPCP()
+	return ct.BuildAtom()
 }
 
 func buildPktHeadAtom(header []byte, pos uint32) *pcp.Atom {
@@ -536,11 +525,7 @@ func ipToUint32(addr net.Addr) uint32 {
 	if !ok {
 		return 0
 	}
-	ip := tcp.IP.To4()
-	if ip == nil {
-		return 0
-	}
-	return uint32(ip[0])<<24 | uint32(ip[1])<<16 | uint32(ip[2])<<8 | uint32(ip[3])
+	return pcp.IPv4ToUint32(tcp.IP)
 }
 
 const pingTimeout = 2 * time.Second

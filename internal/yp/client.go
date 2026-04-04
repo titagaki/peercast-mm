@@ -1,7 +1,6 @@
 package yp
 
 import (
-	"encoding/binary"
 	"fmt"
 	"log/slog"
 	"net"
@@ -253,22 +252,11 @@ func (c *Client) buildBcst(ch *channel.Channel) *pcp.Atom {
 	info := ch.Info()
 	track := ch.Track()
 
-	chanInfo := pcp.NewParentAtom(pcp.PCPChanInfo,
-		pcp.NewStringAtom(pcp.PCPChanInfoName, info.Name),
-		pcp.NewStringAtom(pcp.PCPChanInfoURL, info.URL),
-		pcp.NewStringAtom(pcp.PCPChanInfoDesc, info.Desc),
-		pcp.NewStringAtom(pcp.PCPChanInfoComment, info.Comment),
-		pcp.NewStringAtom(pcp.PCPChanInfoGenre, info.Genre),
-		pcp.NewStringAtom(pcp.PCPChanInfoType, info.Type),
-		pcp.NewIntAtom(pcp.PCPChanInfoBitrate, info.Bitrate),
-	)
+	ci := info.ToPCP()
+	chanInfo := ci.BuildAtom()
 
-	chanTrack := pcp.NewParentAtom(pcp.PCPChanTrack,
-		pcp.NewStringAtom(pcp.PCPChanTrackTitle, track.Title),
-		pcp.NewStringAtom(pcp.PCPChanTrackCreator, track.Creator),
-		pcp.NewStringAtom(pcp.PCPChanTrackURL, track.URL),
-		pcp.NewStringAtom(pcp.PCPChanTrackAlbum, track.Album),
-	)
+	ct := track.ToPCP()
+	chanTrack := ct.BuildAtom()
 
 	chanAtom := pcp.NewParentAtom(pcp.PCPChan,
 		pcp.NewIDAtom(pcp.PCPChanID, ch.ID),
@@ -324,9 +312,7 @@ func parseRoot(a *pcp.Atom) (interval uint32, immediate bool) {
 }
 
 func ipToString(ip uint32) string {
-	b := make([]byte, 4)
-	binary.BigEndian.PutUint32(b, ip)
-	return net.IP(b).String()
+	return pcp.IPv4FromUint32(ip).String()
 }
 
 // parseHostPort parses "host:port" and returns the IP as a big-endian uint32
@@ -344,7 +330,7 @@ func parseHostPort(addr string) (ip uint32, port uint16, err error) {
 	if v4 == nil {
 		return 0, 0, fmt.Errorf("not IPv4: %s", host)
 	}
-	ip = uint32(v4[0])<<24 | uint32(v4[1])<<16 | uint32(v4[2])<<8 | uint32(v4[3])
+	ip = pcp.IPv4ToUint32(v4)
 	p, err := net.LookupPort("tcp", portStr)
 	if err != nil {
 		return 0, 0, err

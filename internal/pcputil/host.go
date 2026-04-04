@@ -39,36 +39,30 @@ func BuildHostAtom(p HostAtomParams) *pcp.Atom {
 		flags |= pcp.PCPHostFlags1Tracker
 	}
 
-	children := []*pcp.Atom{
-		pcp.NewIDAtom(pcp.PCPHostID, p.SessionID),
-		pcp.NewIntAtom(pcp.PCPHostIP, p.GlobalIP),
-		pcp.NewShortAtom(pcp.PCPHostPort, p.ListenPort),
-		pcp.NewIntAtom(pcp.PCPHostNumListeners, uint32(p.NumListeners)),
-		pcp.NewIntAtom(pcp.PCPHostNumRelays, uint32(p.NumRelays)),
-		pcp.NewIntAtom(pcp.PCPHostUptime, p.Uptime),
-		pcp.NewIntAtom(pcp.PCPHostOldPos, p.OldPos),
-		pcp.NewIntAtom(pcp.PCPHostNewPos, p.NewPos),
-		pcp.NewIDAtom(pcp.PCPHostChanID, p.ChannelID),
-		pcp.NewByteAtom(pcp.PCPHostFlags1, flags),
-		pcp.NewIntAtom(pcp.PCPHostVersion, version.PCPVersion),
-		pcp.NewIntAtom(pcp.PCPHostVersionVP, version.PCPVersionVP),
-		pcp.NewBytesAtom(pcp.PCPHostVersionExPrefix, []byte(version.ExPrefix)),
-		pcp.NewShortAtom(pcp.PCPHostVersionExNumber, version.ExNumber()),
-	}
-
+	var tracker uint32
 	if p.TrackerAtom {
-		children = append(children, pcp.NewIntAtom(pcp.PCPHostTracker, 1))
+		tracker = 1
 	}
 
-	if p.UphostIP != 0 || p.UphostPort != 0 {
-		children = append(children,
-			pcp.NewIntAtom(pcp.PCPHostUphostIP, p.UphostIP),
-			pcp.NewIntAtom(pcp.PCPHostUphostPort, uint32(p.UphostPort)),
-		)
-		if p.UphostHops > 0 {
-			children = append(children, pcp.NewIntAtom(pcp.PCPHostUphostHops, p.UphostHops))
-		}
+	h := pcp.HostPacket{
+		ID:              p.SessionID,
+		IP:              p.GlobalIP,
+		Port:            p.ListenPort,
+		NumListeners:    uint32(p.NumListeners),
+		NumRelays:       uint32(p.NumRelays),
+		Uptime:          p.Uptime,
+		OldPos:          p.OldPos,
+		NewPos:          p.NewPos,
+		ChanID:          p.ChannelID,
+		Flags1:          flags,
+		Version:         version.PCPVersion,
+		VersionVP:       version.PCPVersionVP,
+		VersionExPrefix: [2]byte([]byte(version.ExPrefix)),
+		VersionExNumber: version.ExNumber(),
+		Tracker:         tracker,
+		UphostIP:        p.UphostIP,
+		UphostPort:      uint32(p.UphostPort),
+		UphostHops:      p.UphostHops,
 	}
-
-	return pcp.NewParentAtom(pcp.PCPHost, children...)
+	return h.BuildAtom()
 }

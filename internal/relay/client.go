@@ -2,7 +2,6 @@ package relay
 
 import (
 	"bufio"
-	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -296,7 +295,7 @@ func parseRelayHost(atom *pcp.Atom) string {
 		if ports[i] == 0 {
 			continue
 		}
-		ip := net.IP(binary.BigEndian.AppendUint32(nil, ips[i]))
+		ip := pcp.IPv4FromUint32(ips[i])
 		if ip.IsUnspecified() || ip.IsLoopback() {
 			continue
 		}
@@ -358,50 +357,11 @@ func (c *Client) handlePkt(pkt *pcp.Atom) {
 }
 
 func parseChanInfo(a *pcp.Atom) channel.ChannelInfo {
-	var info channel.ChannelInfo
-	for _, child := range a.Children() {
-		switch child.Tag {
-		case pcp.PCPChanInfoName:
-			info.Name = child.GetString()
-		case pcp.PCPChanInfoURL:
-			info.URL = child.GetString()
-		case pcp.PCPChanInfoDesc:
-			info.Desc = child.GetString()
-		case pcp.PCPChanInfoComment:
-			info.Comment = child.GetString()
-		case pcp.PCPChanInfoGenre:
-			info.Genre = child.GetString()
-		case pcp.PCPChanInfoType:
-			info.Type = child.GetString()
-		case pcp.PCPChanInfoBitrate:
-			if v, err := child.GetInt(); err == nil {
-				info.Bitrate = v
-			}
-		}
-	}
-	switch info.Type {
-	case "FLV":
-		info.MIMEType = "video/x-flv"
-		info.Ext = ".flv"
-	}
-	return info
+	return channel.ChannelInfoFromPCP(pcp.ParseChanInfo(a))
 }
 
 func parseChanTrack(a *pcp.Atom) channel.TrackInfo {
-	var track channel.TrackInfo
-	for _, child := range a.Children() {
-		switch child.Tag {
-		case pcp.PCPChanTrackTitle:
-			track.Title = child.GetString()
-		case pcp.PCPChanTrackCreator:
-			track.Creator = child.GetString()
-		case pcp.PCPChanTrackURL:
-			track.URL = child.GetString()
-		case pcp.PCPChanTrackAlbum:
-			track.Album = child.GetString()
-		}
-	}
-	return track
+	return channel.TrackInfoFromPCP(pcp.ParseChanTrack(a))
 }
 
 // bcstHostLoop sends BCST HOST atoms upstream periodically so that
@@ -461,11 +421,7 @@ func connRemoteIPPort(conn net.Conn) (uint32, uint16) {
 	if !ok {
 		return 0, 0
 	}
-	ip4 := tcp.IP.To4()
-	if ip4 == nil {
-		return 0, 0
-	}
-	return binary.BigEndian.Uint32(ip4), uint16(tcp.Port)
+	return pcp.IPv4ToUint32(tcp.IP), uint16(tcp.Port)
 }
 
 // readHTTPStatus reads the HTTP status line and all headers from br,
