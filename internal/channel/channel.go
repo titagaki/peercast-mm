@@ -201,9 +201,14 @@ func (c *Channel) SetTrack(track TrackInfo) {
 	}
 }
 
-// SetHeader updates the stream header and notifies outputs.
+// SetHeader updates the stream header and notifies outputs. If the new header
+// is identical to the current one (same bytes and pos) this is a no-op and
+// outputs are not notified, avoiding spurious ring-buffer resets and header
+// re-sends when upstreams resend an unchanged head packet periodically.
 func (c *Channel) SetHeader(data []byte, pos uint32) {
-	c.buffer.SetHeader(data, pos)
+	if !c.buffer.SetHeader(data, pos) {
+		return
+	}
 	c.mu.RLock()
 	outputs := append([]OutputStream(nil), c.outputs...)
 	c.mu.RUnlock()

@@ -1,6 +1,7 @@
 package channel
 
 import (
+	"bytes"
 	"sync"
 	"time"
 )
@@ -100,14 +101,23 @@ func (b *ContentBuffer) notifyWrite() {
 // Clearing old packets prevents stale data from the previous stream from
 // mixing with the new one. This matches PeerCastStation's AddSourceStream
 // behaviour (contentHeader = null, contents.Clear(), streamIndex++).
-func (b *ContentBuffer) SetHeader(data []byte, pos uint32) {
+//
+// If the new header bytes and pos are identical to the current state this is
+// a no-op and returns false; legacy peercast/peercast-yt upstreams resend the
+// head packet periodically, and resetting the ring buffer on every such resend
+// would destroy buffered data and force viewers to wait for a new keyframe.
+func (b *ContentBuffer) SetHeader(data []byte, pos uint32) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if b.headerPos == pos && bytes.Equal(b.header, data) {
+		return false
+	}
 	cp := make([]byte, len(data))
 	copy(cp, data)
 	b.count = 0
 	b.headerPos = pos
 	b.header = cp
+	return true
 }
 
 // Write appends a data packet and wakes all goroutines waiting on Signal().
