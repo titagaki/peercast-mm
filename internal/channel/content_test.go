@@ -48,7 +48,7 @@ func TestContentBuffer_HeaderEmpty(t *testing.T) {
 func TestContentBuffer_SetHeaderCopies(t *testing.T) {
 	var b ContentBuffer
 	orig := []byte{0x01, 0x02}
-	b.SetHeader(orig)
+	b.SetHeader(orig, 0)
 	orig[0] = 0xFF
 
 	got, _ := b.Header()
@@ -62,7 +62,7 @@ func TestContentBuffer_SetHeaderCopies(t *testing.T) {
 func TestContentBuffer_SetHeaderResetsBuffer(t *testing.T) {
 	var b ContentBuffer
 	b.Write([]byte{0xAA, 0xBB, 0xCC}, 100, 0)
-	b.SetHeader([]byte{0xFF})
+	b.SetHeader([]byte{0xFF}, 0)
 
 	// headerPos is reset to 0 because old packets are cleared.
 	_, pos := b.Header()
@@ -247,7 +247,7 @@ func TestContentBuffer_ConcurrentWriteRead(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for j := 0; j < 50; j++ {
-			b.SetHeader([]byte{byte(j)})
+			b.SetHeader([]byte{byte(j)}, 0)
 		}
 	}()
 	wg.Add(1)

@@ -38,8 +38,21 @@ func (c *byteCounter) add(n int) {
 func (c *byteCounter) rate() int64 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.bucketT.IsZero() || time.Since(c.bucketT) >= 2*time.Second {
+	if c.bucketT.IsZero() {
 		return 0
+	}
+	elapsed := time.Since(c.bucketT)
+	if elapsed >= 2*time.Second {
+		// No writes for 2+ seconds; stale data.
+		c.previous = 0
+		c.current = 0
+		return 0
+	}
+	if elapsed >= time.Second {
+		// Rotate: the current bucket becomes previous, start fresh.
+		c.previous = c.current
+		c.current = 0
+		c.bucketT = time.Now()
 	}
 	return c.previous
 }

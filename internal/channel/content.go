@@ -96,13 +96,13 @@ func (b *ContentBuffer) notifyWrite() {
 // Clearing old packets prevents stale data from the previous stream from
 // mixing with the new one. This matches PeerCastStation's AddSourceStream
 // behaviour (contentHeader = null, contents.Clear(), streamIndex++).
-func (b *ContentBuffer) SetHeader(data []byte) {
+func (b *ContentBuffer) SetHeader(data []byte, pos uint32) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	cp := make([]byte, len(data))
 	copy(cp, data)
 	b.count = 0
-	b.headerPos = 0
+	b.headerPos = pos
 	b.header = cp
 }
 

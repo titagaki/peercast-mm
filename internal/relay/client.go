@@ -376,7 +376,7 @@ func (c *Client) handlePkt(p *pcp.ChanPktData) {
 	switch p.Type {
 	case pktTypeHead:
 		if len(p.Data) > 0 {
-			c.ch.SetHeader(p.Data)
+			c.ch.SetHeader(p.Data, p.Pos)
 		}
 	case pktTypeData:
 		if len(p.Data) == 0 {

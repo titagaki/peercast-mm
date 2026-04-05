@@ -35,7 +35,7 @@ type PCPOutputStream struct {
 }
 
 func newPCPOutputStream(conn *countingConn, br *bufio.Reader, sessionID pcp.GnuID, ch *channel.Channel, id int, globalIP uint32, listenPort uint16) *PCPOutputStream {
-	o := &PCPOutputStream{
+	return &PCPOutputStream{
 		outputBase: newOutputBase(conn, id),
 		br:         br,
 		sessionID:  sessionID,
@@ -44,8 +44,6 @@ func newPCPOutputStream(conn *countingConn, br *bufio.Reader, sessionID pcp.GnuI
 		globalIP:   globalIP,
 		listenPort: listenPort,
 	}
-	o.onClose = func() { conn.Close() }
-	return o
 }
 
 // Type implements channel.OutputStream.
@@ -251,8 +249,6 @@ func (o *PCPOutputStream) streamLoop(reqPos uint32) {
 			continue
 		}
 
-		// No data available — not a queue stall; reset the timer.
-		stallTimer.Reset(outputQueueTimeout)
 		select {
 		case <-o.closeCh:
 			slog.Debug("pcp: closed by readLoop", "remote", o.remoteAddr, "id", o.id)

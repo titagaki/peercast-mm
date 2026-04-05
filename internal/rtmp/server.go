@@ -238,7 +238,7 @@ func (h *handler) rebuildHeader() {
 		"aacSize", len(h.aacTag),
 	)
 
-	ch.SetHeader(head)
+	ch.SetHeader(head, 0)
 	if !h.headerSent {
 		h.headerSent = true
 		slog.Info("rtmp: stream started", "remote", h.remoteAddr, "key", h.streamKey)

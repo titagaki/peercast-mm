@@ -24,13 +24,11 @@ type HTTPOutputStream struct {
 }
 
 func newHTTPOutputStream(conn *countingConn, br *bufio.Reader, ch *channel.Channel, id int) *HTTPOutputStream {
-	o := &HTTPOutputStream{
+	return &HTTPOutputStream{
 		outputBase: newOutputBase(conn, id),
 		br:         br,
 		ch:         ch,
 	}
-	o.onClose = func() { conn.Close() }
-	return o
 }
 
 // Type implements channel.OutputStream.
@@ -111,6 +109,12 @@ func (o *HTTPOutputStream) run() {
 		if len(packets) == 0 {
 			select {
 			case <-o.closeCh:
+				return
+			case <-o.headerCh:
+				// Stream header changed (e.g. relay reconnected with new
+				// codec config). HTTP/FLV cannot splice a new header
+				// mid-stream, so disconnect and let the player reconnect.
+				slog.Debug("http: header changed, closing", "remote", o.remoteAddr, "id", o.id)
 				return
 			case <-sigCh:
 				continue

@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"sync/atomic"
 
 	"github.com/titagaki/peercast-pcp/pcp"
@@ -46,6 +47,7 @@ type Listener struct {
 	nextConnID      atomic.Int64
 	apiHandler      http.Handler      // JSON-RPC handler for POST /api/; may be nil
 	OnDemandRelay   OnDemandRelayFunc // optional: auto-start relay on /pls/ request
+	admitMu         sync.Mutex        // serializes global limit check + TryAddOutput
 }
 
 // NewListener creates a new Listener.
@@ -160,20 +162,9 @@ func (l *Listener) handlePCPRelay(cc *countingConn, br *bufio.Reader, peek []byt
 		cc.Close()
 		return
 	}
-	if l.maxRelaysTotal > 0 && l.mgr.TotalRelays() >= l.maxRelaysTotal {
-		slog.Info("pcp: relay rejected (total relay full)", "remote", cc.RemoteAddr())
-		cc.Close()
-		return
-	}
-	if l.isUpstreamFull() {
-		slog.Info("pcp: relay rejected (upstream bandwidth full)", "remote", cc.RemoteAddr())
-		cc.Close()
-		return
-	}
 	id := int(l.nextConnID.Add(1))
 	h := newPCPOutputStream(cc, br, l.sessionID, ch, id, l.globalIP.Load(), uint16(l.port))
-	if !ch.TryAddOutput(h, l.maxRelays, l.maxListeners) {
-		slog.Info("pcp: relay rejected (relay full)", "remote", cc.RemoteAddr())
+	if !l.tryAdmit(ch, h) {
 		cc.Close()
 		return
 	}
@@ -252,21 +243,38 @@ func (l *Listener) handleHTTPStream(cc *countingConn, br *bufio.Reader, peek []b
 		cc.Close()
 		return
 	}
-	if l.isUpstreamFull() {
-		slog.Info("http: viewer rejected (upstream bandwidth full)", "remote", cc.RemoteAddr())
-		cc.Close()
-		return
-	}
 	id := int(l.nextConnID.Add(1))
 	h := newHTTPOutputStream(cc, br, ch, id)
-	if !ch.TryAddOutput(h, l.maxRelays, l.maxListeners) {
-		slog.Info("http: viewer rejected (direct full)", "remote", cc.RemoteAddr())
+	if !l.tryAdmit(ch, h) {
 		cc.Close()
 		return
 	}
 	slog.Info("http: viewer connected", "remote", cc.RemoteAddr(), "id", id)
 	h.run()
 	ch.RemoveOutput(h)
+}
+
+// tryAdmit atomically checks global limits and adds the output stream to the
+// channel. Returns false if any limit is exceeded; the caller must close the
+// connection. The mutex serializes the global-limit check and TryAddOutput so
+// that concurrent connections cannot both pass the check before either is added.
+func (l *Listener) tryAdmit(ch *channel.Channel, o channel.OutputStream) bool {
+	l.admitMu.Lock()
+	defer l.admitMu.Unlock()
+
+	if o.Type() == channel.OutputStreamPCP && l.maxRelaysTotal > 0 && l.mgr.TotalRelays() >= l.maxRelaysTotal {
+		slog.Info("servent: rejected (total relay full)", "remote", o.RemoteAddr())
+		return false
+	}
+	if l.isUpstreamFull() {
+		slog.Info("servent: rejected (upstream bandwidth full)", "remote", o.RemoteAddr())
+		return false
+	}
+	if !ch.TryAddOutput(o, l.maxRelays, l.maxListeners) {
+		slog.Info("servent: rejected (per-channel full)", "remote", o.RemoteAddr())
+		return false
+	}
+	return true
 }
 
 // isUpstreamFull reports whether the total upstream bandwidth exceeds the limit.

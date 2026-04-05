@@ -167,8 +167,8 @@ func (c *Channel) SetTrack(track TrackInfo) {
 }
 
 // SetHeader updates the stream header and notifies outputs.
-func (c *Channel) SetHeader(data []byte) {
-	c.buffer.SetHeader(data)
+func (c *Channel) SetHeader(data []byte, pos uint32) {
+	c.buffer.SetHeader(data, pos)
 	c.mu.RLock()
 	outputs := append([]OutputStream(nil), c.outputs...)
 	c.mu.RUnlock()
