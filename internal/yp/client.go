@@ -71,16 +71,18 @@ func New(addr string, sessionID, broadcastID pcp.GnuID, mgr ChannelLister, liste
 }
 
 // Run connects to the YP and runs the bcst loop, reconnecting on failure.
-// It waits until at least one channel (broadcasting or relay) exists before
-// connecting, so that relay-only nodes can learn their global IP from the
-// YP oleh response.
+// Before globalIP is known, it connects as soon as any channel (broadcasting
+// or relay) exists, so relay-only nodes can learn their global IP from the
+// YP oleh response. Once globalIP is known, it only connects when there is
+// at least one broadcasting channel to announce — relay-only nodes have
+// nothing to send and would be closed by the YP's read timeout.
 func (c *Client) Run() {
 	defer close(c.doneCh)
-	if !c.waitForChannel() {
-		return
-	}
 	delay := retryInitial
 	for {
+		if !c.waitForChannel() {
+			return
+		}
 		connected, err := c.run()
 		if err != nil {
 			slog.Error("yp: connection error", "addr", c.addr, "err", err)
@@ -102,12 +104,11 @@ func (c *Client) Run() {
 	}
 }
 
-// waitForChannel blocks until at least one channel (broadcasting or relay)
-// exists, or until the client is stopped. This allows relay-only nodes to
-// connect to the YP and learn their global IP from the oleh response.
+// waitForChannel blocks until shouldConnect returns true, or until the client
+// is stopped.
 func (c *Client) waitForChannel() bool {
 	for {
-		if len(c.mgr.List()) > 0 {
+		if c.shouldConnect() {
 			return true
 		}
 		select {
@@ -119,6 +120,34 @@ func (c *Client) waitForChannel() bool {
 			// poll
 		}
 	}
+}
+
+// shouldConnect decides whether the client has a reason to (re)connect to
+// the YP right now. See Run's comment for the rationale.
+func (c *Client) shouldConnect() bool {
+	channels := c.mgr.List()
+	if len(channels) == 0 {
+		return false
+	}
+	if c.globalIP == 0 {
+		return true
+	}
+	for _, ch := range channels {
+		if ch.IsBroadcasting() {
+			return true
+		}
+	}
+	return false
+}
+
+// hasBroadcastingChannel reports whether any channel is currently broadcasting.
+func (c *Client) hasBroadcastingChannel() bool {
+	for _, ch := range c.mgr.List() {
+		if ch.IsBroadcasting() {
+			return true
+		}
+	}
+	return false
 }
 
 const stopTimeout = 3 * time.Second
@@ -186,6 +215,16 @@ func (c *Client) run() (connected bool, err error) {
 
 handshakeDone:
 	slog.Info("yp: connected", "addr", c.addr, "global_ip", ipToString(c.globalIP), "update_interval", updateInterval)
+
+	// Relay-only nodes have nothing to announce. We only connected to learn
+	// our global IP from the oleh response; now that we have it, disconnect
+	// cleanly. Otherwise the YP would close the connection after its read
+	// timeout (UpdateInterval + 60s) since we never send any bcst.
+	if !c.hasBroadcastingChannel() {
+		_ = conn.WriteAtom(pcp.NewIntAtom(pcp.PCPQuit, pcp.PCPErrorQuit+pcp.PCPErrorShutdown))
+		slog.Info("yp: disconnected (relay-only, global IP learned)", "addr", c.addr)
+		return true, nil
+	}
 
 	ticker := time.NewTicker(updateInterval)
 	defer ticker.Stop()
