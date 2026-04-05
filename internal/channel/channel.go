@@ -202,6 +202,11 @@ func (c *Channel) Since(pos uint32) []Content {
 	return c.buffer.Since(pos)
 }
 
+// ContentPosition returns the byte position just past the newest content.
+func (c *Channel) ContentPosition() uint32 {
+	return c.buffer.ContentPosition()
+}
+
 // OldestPos returns the stream position of the oldest buffered packet.
 func (c *Channel) OldestPos() uint32 {
 	return c.buffer.OldestPos()

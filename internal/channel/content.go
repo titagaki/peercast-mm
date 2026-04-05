@@ -193,6 +193,27 @@ func (b *ContentBuffer) Since(pos uint32) []Content {
 	return result
 }
 
+// ContentPosition returns the byte position just past the newest content,
+// matching PeerCastStation's Channel.ContentPosition property.
+// Returns 0 if no header has been set.
+func (b *ContentBuffer) ContentPosition() uint32 {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	if b.header == nil {
+		return 0
+	}
+	headerEnd := b.headerPos + uint32(len(b.header))
+	if b.count == 0 {
+		return headerEnd
+	}
+	newest := b.packets[(b.count-1)%len(b.packets)]
+	newestEnd := newest.Pos + uint32(len(newest.Data))
+	if b.headerPos > newest.Pos {
+		return headerEnd
+	}
+	return newestEnd
+}
+
 // HasData returns true if the buffer contains at least one packet.
 func (b *ContentBuffer) HasData() bool {
 	b.mu.RLock()

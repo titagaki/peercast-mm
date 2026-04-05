@@ -457,9 +457,10 @@ func fakeUpstream(t *testing.T, ln net.Listener, expectedChanID pcp.GnuID) error
 
 // --- Run / Stop lifecycle ---
 
-func TestRunStop(t *testing.T) {
+func TestRunStop_TrackerFail(t *testing.T) {
 	ch := newTestChannel()
-	// Use an invalid address so connect fails immediately.
+	// Use an invalid address so connect to tracker fails immediately.
+	// With no backoff, Run should stop after the tracker fails (no other hosts).
 	c := New("127.0.0.1:1", pcp.GnuID{}, pcp.GnuID{}, 0, ch)
 
 	done := make(chan struct{})
@@ -468,26 +469,71 @@ func TestRunStop(t *testing.T) {
 		close(done)
 	}()
 
-	// Give it a moment to fail and enter backoff, then stop.
-	time.Sleep(50 * time.Millisecond)
-	c.Stop()
+	select {
+	case <-done:
+		// OK �� Run exited because tracker connection failed.
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not exit after tracker failure")
+	}
+}
+
+func TestRunStop_NonTrackerIgnored(t *testing.T) {
+	ch := newTestChannel()
+	// Start a listener that accepts and immediately closes, so connectTo
+	// fails quickly. The node is a non-tracker, so it should be ignored
+	// and Run should eventually stop when no hosts remain.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			conn.Close()
+		}
+	}()
+
+	// Tracker is unreachable; one non-tracker source node closes immediately.
+	// Flow: source node → error → ignored → tracker → refused → stop.
+	c := New("127.0.0.1:1", pcp.GnuID{}, pcp.GnuID{}, 0, ch)
+	c.sourceNodes.Add(SourceNode{
+		SessionID:   pcp.GnuID{0x01},
+		GlobalAddr:  ln.Addr().String(),
+		IsReceiving: true,
+	})
+
+	done := make(chan struct{})
+	go func() {
+		c.Run()
+		close(done)
+	}()
 
 	select {
 	case <-done:
-		// OK
+		// OK — Run exited after exhausting all hosts.
 	case <-time.After(5 * time.Second):
-		t.Fatal("Run did not exit after Stop")
+		t.Fatal("Run did not exit after all hosts exhausted")
 	}
 }
 
 func TestStopIdempotent(t *testing.T) {
 	ch := newTestChannel()
+	// Use an unreachable tracker so Run exits immediately (connection refused).
 	c := New("127.0.0.1:1", pcp.GnuID{}, pcp.GnuID{}, 0, ch)
 
-	go c.Run()
-	time.Sleep(50 * time.Millisecond)
+	done := make(chan struct{})
+	go func() {
+		c.Run()
+		close(done)
+	}()
 
-	// Multiple Stop calls should not panic.
+	<-done
+
+	// Multiple Stop calls after Run exited should not panic.
 	c.Stop()
 	c.Stop()
 }

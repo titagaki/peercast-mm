@@ -21,10 +21,8 @@ import (
 )
 
 const (
-	dialTimeout  = 10 * time.Second
-	readTimeout  = 60 * time.Second
-	retryInitial = 5 * time.Second
-	retryMax     = 120 * time.Second
+	dialTimeout = 10 * time.Second
+	readTimeout = 60 * time.Second
 )
 
 var (
@@ -41,10 +39,9 @@ const (
 type stopReason int
 
 const (
-	stopReasonError         stopReason = iota // I/O or protocol error (no data received)
-	stopReasonErrorAfterData                  // I/O error after successfully receiving data
-	stopReasonUnavailable                     // quit code 1003
-	stopReasonOffAir                          // quit with other code
+	stopReasonError       stopReason = iota // I/O or protocol error
+	stopReasonUnavailable                   // quit code 1003
+	stopReasonOffAir                        // quit with other code
 )
 
 // Client connects to an upstream PeerCast node and writes the received stream
@@ -86,30 +83,33 @@ func New(trackerAddr string, channelID, sessionID pcp.GnuID, listenPort uint16, 
 	}
 }
 
-// Run connects to the upstream node and runs the receive loop, reconnecting on
-// failure with exponential backoff. It blocks until Stop is called.
+// Run connects to the upstream node and runs the receive loop, reconnecting
+// immediately on failure. It blocks until Stop is called or no connectable
+// host remains.
 //
-// Host selection follows PeerCastStation's algorithm: source nodes learned from
-// PCP HOST atoms are scored and the best candidate is chosen. Hosts that return
-// UNAVAILABLE (code 1003) or fail are temporarily ignored for 3 minutes.
+// Reconnection follows PeerCastStation's algorithm:
+//   - Source nodes learned from PCP HOST atoms are scored and the best
+//     candidate is chosen.
+//   - Hosts that return UNAVAILABLE (code 1003) or fail are temporarily
+//     ignored for 3 minutes.
+//   - Reconnection is immediate (no backoff); when all hosts including the
+//     tracker are exhausted, the client stops (NoHost).
+//   - OffAir / Error from a non-tracker host causes an ignore + immediate
+//     retry on the next host. OffAir / Error from the tracker stops the client.
 func (c *Client) Run() {
 	defer close(c.doneCh)
-	delay := retryInitial
 
 	for {
+		select {
+		case <-c.stopCh:
+			return
+		default:
+		}
+
 		targetAddr := selectSourceHost(c.sourceNodes.List(), c.ignoredNodes, c.trackerAddr)
 		if targetAddr == "" {
-			// All hosts exhausted — wait with backoff.
-			select {
-			case <-c.stopCh:
-				return
-			case <-time.After(delay):
-			}
-			delay *= 2
-			if delay > retryMax {
-				delay = retryMax
-			}
-			continue
+			slog.Info("relay: no connectable host, stopping")
+			return
 		}
 
 		reason, err := c.connectTo(targetAddr)
@@ -122,38 +122,23 @@ func (c *Client) Run() {
 		}
 
 		switch reason {
-		case stopReasonOffAir:
-			// Channel is off-air — stop retrying (matches PeerCastStation).
-			slog.Info("relay: channel off-air, stopping", "addr", targetAddr)
-			return
 		case stopReasonUnavailable:
 			// Host is full — ignore it and immediately try the next best.
 			c.ignoredNodes.Add(targetAddr)
-			delay = retryInitial
-			select {
-			case <-c.stopCh:
-				return
-			default:
-			}
 			continue
-		case stopReasonErrorAfterData:
-			// Connection was productive but lost — reset backoff and retry.
-			delay = retryInitial
-		case stopReasonError:
-			// Connection or protocol error — ignore this host, try next.
+		case stopReasonOffAir, stopReasonError:
+			// Non-tracker: ignore + retry next host (matches PeerCastStation).
+			// Tracker: stop.
 			if targetAddr != c.trackerAddr {
 				c.ignoredNodes.Add(targetAddr)
+				continue
 			}
-		}
-
-		select {
-		case <-c.stopCh:
+			if reason == stopReasonOffAir {
+				slog.Info("relay: channel off-air, stopping", "addr", targetAddr)
+			} else {
+				slog.Info("relay: tracker connection failed, stopping", "addr", targetAddr)
+			}
 			return
-		case <-time.After(delay):
-		}
-		delay *= 2
-		if delay > retryMax {
-			delay = retryMax
 		}
 	}
 }
@@ -204,7 +189,10 @@ func (c *Client) handshake(conn net.Conn, addr string) (int, *bufio.Reader, stop
 	chanIDHex := hex.EncodeToString(c.channelID[:])
 
 	// 1. Send HTTP GET /channel/<id> with PCP upgrade header.
-	req := fmt.Sprintf("GET /channel/%s HTTP/1.0\r\nHost: %s\r\nx-peercast-pcp: 1\r\nx-peercast-pos: 0\r\n\r\n", chanIDHex, addr)
+	// x-peercast-pos tells the upstream where to resume from, matching
+	// PeerCastStation which sends Channel.ContentPosition on reconnect.
+	contentPos := c.ch.ContentPosition()
+	req := fmt.Sprintf("GET /channel/%s HTTP/1.0\r\nHost: %s\r\nx-peercast-pcp: 1\r\nx-peercast-pos: %d\r\n\r\n", chanIDHex, addr, contentPos)
 	if _, err := io.WriteString(conn, req); err != nil {
 		return 0, nil, stopReasonError, fmt.Errorf("write GET: %w", err)
 	}
@@ -257,7 +245,6 @@ func (c *Client) handshake(conn net.Conn, addr string) (int, *bufio.Reader, stop
 // processBody handles the main receive loop for a 200 (connected) relay.
 // It processes all atom types: PCP_CHAN, PCP_HOST, PCP_BCST, PCP_OK, PCP_QUIT.
 func (c *Client) processBody(conn net.Conn, br *bufio.Reader) (stopReason, error) {
-	receivedData := false
 	for {
 		select {
 		case <-c.stopCh:
@@ -274,17 +261,12 @@ func (c *Client) processBody(conn net.Conn, br *bufio.Reader) (stopReason, error
 				return stopReasonOffAir, nil
 			default:
 			}
-			reason := stopReasonError
-			if receivedData {
-				reason = stopReasonErrorAfterData
-			}
-			return reason, fmt.Errorf("read atom: %w", err)
+			return stopReasonError, fmt.Errorf("read atom: %w", err)
 		}
 
 		switch atom.Tag {
 		case pcp.PCPChan:
 			c.handleChan(atom)
-			receivedData = true
 		case pcp.PCPHost:
 			if node, ok := parseSourceNode(atom); ok {
 				c.sourceNodes.Add(node)
