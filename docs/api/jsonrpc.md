@@ -211,7 +211,7 @@ config.toml の `peercast_port` / `rtmp_port` の値を返す。
       "mimeType": "video/x-flv"
     },
     "track": {
-      "name": "",
+      "title": "",
       "genre": "",
       "album": "",
       "creator": "",
@@ -241,7 +241,7 @@ config.toml の `peercast_port` / `rtmp_port` の値を返す。
     "mimeType": "video/x-flv"
   },
   "track": {
-    "name": "",
+    "title": "",
     "genre": "",
     "album": "",
     "creator": "",

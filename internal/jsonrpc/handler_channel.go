@@ -45,7 +45,7 @@ type chanInfoResult struct {
 }
 
 type trackInfoResult struct {
-	Name    string `json:"name"`
+	Title   string `json:"title"`
 	Genre   string `json:"genre"`
 	Album   string `json:"album"`
 	Creator string `json:"creator"`
@@ -87,7 +87,7 @@ func (s *Server) buildChanInfo(ch *channel.Channel) chanInfoResult {
 func (s *Server) buildTrackInfo(ch *channel.Channel) trackInfoResult {
 	track := ch.Track()
 	return trackInfoResult{
-		Name:    track.Title,
+		Title:   track.Title,
 		Genre:   "",
 		Album:   track.Album,
 		Creator: track.Creator,
