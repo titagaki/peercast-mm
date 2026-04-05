@@ -2,6 +2,8 @@
 
 [spec.md](spec.md) のシステム概要・ライフサイクル・並行処理設計を前提とする。
 
+PeerCastStation との差異を埋めるために入れた動作の根拠 (rationale) については [peercaststation-compat.md](peercaststation-compat.md) を参照。
+
 ---
 
 ## 4.1 RTMPServer
