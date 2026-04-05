@@ -30,11 +30,13 @@ type ChannelLister interface {
 // Client maintains a PCP COUT connection to a YP (root server).
 // It announces all channels currently active in the manager.
 type Client struct {
-	addr        string
-	sessionID   pcp.GnuID
-	broadcastID pcp.GnuID
-	mgr         ChannelLister
-	listenPort  uint16
+	addr         string
+	sessionID    pcp.GnuID
+	broadcastID  pcp.GnuID
+	mgr          ChannelLister
+	listenPort   uint16
+	maxRelays    int // per-channel 制限 (0 = unlimited)
+	maxListeners int // per-channel 制限 (0 = unlimited)
 
 	globalIP uint32 // learned from oleh.rip
 	localIP  uint32 // local address of YP connection
@@ -50,19 +52,21 @@ type Client struct {
 }
 
 // New creates a new YPClient.
-func New(addr string, sessionID, broadcastID pcp.GnuID, mgr ChannelLister, listenPort int) *Client {
+func New(addr string, sessionID, broadcastID pcp.GnuID, mgr ChannelLister, listenPort, maxRelays, maxListeners int) *Client {
 	if listenPort <= 0 {
 		listenPort = defaultPCPPort
 	}
 	return &Client{
-		addr:        addr,
-		sessionID:   sessionID,
-		broadcastID: broadcastID,
-		mgr:         mgr,
-		listenPort:  uint16(listenPort),
-		stopCh:      make(chan struct{}),
-		bumpCh:      make(chan struct{}, 1),
-		doneCh:      make(chan struct{}),
+		addr:         addr,
+		sessionID:    sessionID,
+		broadcastID:  broadcastID,
+		mgr:          mgr,
+		listenPort:   uint16(listenPort),
+		maxRelays:    maxRelays,
+		maxListeners: maxListeners,
+		stopCh:       make(chan struct{}),
+		bumpCh:       make(chan struct{}, 1),
+		doneCh:       make(chan struct{}),
 	}
 }
 
@@ -186,11 +190,40 @@ handshakeDone:
 	ticker := time.NewTicker(updateInterval)
 	defer ticker.Stop()
 
-	// Send initial bcst for all active channels.
+	// Send initial bcst for all active channels. The handshake-phase
+	// sendImmediately flag is honored implicitly here: regardless of its value
+	// we perform an initial announcement right after the handshake.
 	_ = sendImmediately
 	if err := c.sendAllBcst(conn); err != nil {
 		return true, fmt.Errorf("write bcst: %w", err)
 	}
+
+	// Post-handshake reader: listens for root/quit atoms from the YP.
+	// On a root atom with the update flag set, trigger an immediate bcst.
+	// On a quit atom or any read error, signal the main loop to exit.
+	readErrCh := make(chan error, 1)
+	immediateCh := make(chan struct{}, 1)
+	go func() {
+		for {
+			a, err := conn.ReadAtom()
+			if err != nil {
+				readErrCh <- err
+				return
+			}
+			switch a.Tag {
+			case pcp.PCPRoot:
+				if _, immediate := parseRoot(a); immediate {
+					select {
+					case immediateCh <- struct{}{}:
+					default:
+					}
+				}
+			case pcp.PCPQuit:
+				readErrCh <- fmt.Errorf("quit from YP")
+				return
+			}
+		}
+	}()
 
 	for {
 		select {
@@ -198,10 +231,17 @@ handshakeDone:
 			_ = conn.WriteAtom(pcp.NewIntAtom(pcp.PCPQuit, pcp.PCPErrorQuit+pcp.PCPErrorShutdown))
 			slog.Info("yp: disconnected", "addr", c.addr)
 			return true, nil
+		case err := <-readErrCh:
+			return true, fmt.Errorf("read: %w", err)
 		case <-ticker.C:
 			if err := c.sendAllBcst(conn); err != nil {
 				return true, fmt.Errorf("write bcst: %w", err)
 			}
+		case <-immediateCh:
+			if err := c.sendAllBcst(conn); err != nil {
+				return true, fmt.Errorf("write bcst (immediate): %w", err)
+			}
+			slog.Debug("yp: bcst sent (root update)", "addr", c.addr)
 		case <-c.bumpCh:
 			if err := c.sendAllBcst(conn); err != nil {
 				return true, fmt.Errorf("write bcst (bump): %w", err)
@@ -283,6 +323,8 @@ func (c *Client) buildBcst(ch *channel.Channel) *pcp.Atom {
 		IsTracker:    true,
 		HasGlobalIP:  true,
 		TrackerAtom:  true,
+		RelayFull:    ch.IsRelayFull(c.maxRelays),
+		DirectFull:   ch.IsDirectFull(c.maxListeners),
 	}
 	if upAddr := ch.UpstreamAddr(); upAddr != "" {
 		if upIP, upPort, err := parseHostPort(upAddr); err == nil {

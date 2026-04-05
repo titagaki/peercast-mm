@@ -27,25 +27,29 @@ const (
 // PCPOutputStream sends PCP stream data to a downstream relay node.
 type PCPOutputStream struct {
 	outputBase
-	br         *bufio.Reader
-	sessionID  pcp.GnuID
-	peerID     pcp.GnuID // 下流ピアの session ID（ループ防止用）
-	ch         *channel.Channel
-	bcstCh     chan *pcp.Atom
-	globalIP   uint32
-	listenPort uint16
-	remotePort uint16 // 下流ピアのポート（0 = firewalled）
+	br           *bufio.Reader
+	sessionID    pcp.GnuID
+	peerID       pcp.GnuID // 下流ピアの session ID（ループ防止用）
+	ch           *channel.Channel
+	bcstCh       chan *pcp.Atom
+	globalIP     uint32
+	listenPort   uint16
+	remotePort   uint16 // 下流ピアのポート（0 = firewalled）
+	maxRelays    int    // per-channel 制限 (0 = unlimited)
+	maxListeners int    // per-channel 制限 (0 = unlimited)
 }
 
-func newPCPOutputStream(conn *countingConn, br *bufio.Reader, sessionID pcp.GnuID, ch *channel.Channel, id int, globalIP uint32, listenPort uint16) *PCPOutputStream {
+func newPCPOutputStream(conn *countingConn, br *bufio.Reader, sessionID pcp.GnuID, ch *channel.Channel, id int, globalIP uint32, listenPort uint16, maxRelays, maxListeners int) *PCPOutputStream {
 	return &PCPOutputStream{
-		outputBase: newOutputBase(conn, id),
-		br:         br,
-		sessionID:  sessionID,
-		ch:         ch,
-		bcstCh:     make(chan *pcp.Atom, 8),
-		globalIP:   globalIP,
-		listenPort: listenPort,
+		outputBase:   newOutputBase(conn, id),
+		br:           br,
+		sessionID:    sessionID,
+		ch:           ch,
+		bcstCh:       make(chan *pcp.Atom, 8),
+		globalIP:     globalIP,
+		listenPort:   listenPort,
+		maxRelays:    maxRelays,
+		maxListeners: maxListeners,
 	}
 }
 
@@ -191,11 +195,17 @@ func (o *PCPOutputStream) handshake(admitted bool) (startPos uint32, err error) 
 	return startPos, nil
 }
 
-// sendRelayDenied sends the host atom with alternative nodes and a QUIT with
-// PCPErrorUnavailable, used when the relay limit has been reached.
+// sendRelayDenied sends the host atom followed by up to 8 alternative relay
+// candidates and a QUIT with PCPErrorUnavailable, used when the relay limit
+// has been reached (PeerCastStation 互換: SelectSourceHosts で候補を返す)。
 func (o *PCPOutputStream) sendRelayDenied() {
 	hostAtom := o.buildHostAtom()
 	hostAtom.Write(o.conn)
+	for _, alt := range o.ch.SelectSourceHosts(8) {
+		if err := alt.Write(o.conn); err != nil {
+			break
+		}
+	}
 	o.sendQuit(pcp.PCPErrorQuit + pcp.PCPErrorUnavailable)
 }
 
@@ -236,6 +246,8 @@ func (o *PCPOutputStream) buildHostAtom() *pcp.Atom {
 		NewPos:       o.ch.NewestPos(),
 		IsTracker:    o.ch.IsBroadcasting(),
 		HasGlobalIP:  o.globalIP != 0,
+		RelayFull:    o.ch.IsRelayFull(o.maxRelays),
+		DirectFull:   o.ch.IsDirectFull(o.maxListeners),
 	})
 }
 
@@ -364,7 +376,10 @@ func (o *PCPOutputStream) sendDataPackets(packets []channel.Content, pos uint32,
 			o.conn.SetWriteDeadline(time.Time{})
 			data = data[len(chunk):]
 			chunkPos += uint32(len(chunk))
-			contFlags = 0x01 // Fragment flag for subsequent chunks
+			// Subsequent chunks OR the Fragment flag onto the original flags
+			// (PeerCastStation 互換: pkt.ContFlag | Fragment)。上書きすると
+			// InterFrame/AudioFrame などの元フラグが失われる。
+			contFlags = pkt.ContFlags | 0x01
 		}
 		pos = pkt.Pos + uint32(len(pkt.Data))
 	}
@@ -517,6 +532,11 @@ func (o *PCPOutputStream) forwardBcst(a *pcp.Atom) {
 		if err == nil && id == o.sessionID {
 			return // addressed to us, don't forward
 		}
+	}
+	// Cache any Host atom payload so that SelectSourceHosts can hand it out
+	// as an alternative relay candidate when this node is full.
+	if host := a.FindChild(pcp.PCPHost); host != nil {
+		o.ch.AddKnownHost(host)
 	}
 	// Rebuild bcst with decremented TTL and incremented hops.
 	forwarded := rebuildBcst(a, ttl)

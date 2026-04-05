@@ -21,6 +21,12 @@ type HostAtomParams struct {
 	IsTracker    bool
 	HasGlobalIP  bool
 
+	// RelayFull / DirectFull indicate that the corresponding slot is
+	// exhausted, in which case the Relay / Direct flag1 bit is NOT set
+	// (PeerCastStation 互換: slot 満杯時は該当 flag を落とす)。
+	RelayFull  bool
+	DirectFull bool
+
 	// TrackerAtom adds an explicit pcp.PCPHostTracker atom (used in YP bcst).
 	TrackerAtom bool
 
@@ -37,8 +43,11 @@ type HostAtomParams struct {
 // (LAN) endpoint. HostPacket.BuildAtom() only emits one pair, so we
 // build the atom manually here.
 func BuildHostAtom(p HostAtomParams) *pcp.Atom {
-	flags := byte(pcp.PCPHostFlags1Relay | pcp.PCPHostFlags1Recv | pcp.PCPHostFlags1CIN)
-	if p.HasGlobalIP {
+	flags := byte(pcp.PCPHostFlags1Recv | pcp.PCPHostFlags1CIN)
+	if !p.RelayFull {
+		flags |= pcp.PCPHostFlags1Relay
+	}
+	if p.HasGlobalIP && !p.DirectFull {
 		flags |= pcp.PCPHostFlags1Direct
 	}
 	if p.IsTracker {

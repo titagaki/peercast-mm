@@ -171,7 +171,7 @@ func (l *Listener) handlePCPRelay(cc *countingConn, br *bufio.Reader, peek []byt
 		return
 	}
 	id := int(l.nextConnID.Add(1))
-	h := newPCPOutputStream(cc, br, l.sessionID, ch, id, l.globalIP.Load(), uint16(l.port))
+	h := newPCPOutputStream(cc, br, l.sessionID, ch, id, l.globalIP.Load(), uint16(l.port), l.maxRelays, l.maxListeners)
 
 	// Check admission before handshake to determine HTTP status code (200 vs 503).
 	admitted := l.canAdmitRelay(ch)

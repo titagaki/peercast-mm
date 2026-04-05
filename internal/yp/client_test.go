@@ -80,7 +80,7 @@ func setupClient(t *testing.T, serverConn net.Conn) (*Client, pcp.GnuID, pcp.Gnu
 	bcid := id.NewRandom()
 	mgr := channel.NewManager(bcid)
 	// Use the server-side address; client dials our pipe.
-	c := New("unused", sid, bcid, mgr, 7144)
+	c := New("unused", sid, bcid, mgr, 7144, 0, 0)
 	return c, sid, bcid
 }
 
@@ -115,7 +115,7 @@ func dialPipe(t *testing.T) (*pcp.Conn, net.Conn) {
 
 func TestNew_DefaultPort(t *testing.T) {
 	mgr := channel.NewManager(id.NewRandom())
-	c := New("localhost:7144", id.NewRandom(), id.NewRandom(), mgr, 0)
+	c := New("localhost:7144", id.NewRandom(), id.NewRandom(), mgr, 0, 0, 0)
 	if c.listenPort != defaultPCPPort {
 		t.Errorf("listenPort: got %d, want %d", c.listenPort, defaultPCPPort)
 	}
@@ -123,7 +123,7 @@ func TestNew_DefaultPort(t *testing.T) {
 
 func TestNew_CustomPort(t *testing.T) {
 	mgr := channel.NewManager(id.NewRandom())
-	c := New("localhost:7144", id.NewRandom(), id.NewRandom(), mgr, 8144)
+	c := New("localhost:7144", id.NewRandom(), id.NewRandom(), mgr, 8144, 0, 0)
 	if c.listenPort != 8144 {
 		t.Errorf("listenPort: got %d, want 8144", c.listenPort)
 	}
@@ -137,7 +137,7 @@ func TestBuildHelo(t *testing.T) {
 	sid := id.NewRandom()
 	bcid := id.NewRandom()
 	mgr := channel.NewManager(bcid)
-	c := New("localhost:7144", sid, bcid, mgr, 9000)
+	c := New("localhost:7144", sid, bcid, mgr, 9000, 0, 0)
 
 	helo := c.buildHelo()
 
@@ -199,7 +199,7 @@ func TestBuildBcst(t *testing.T) {
 	sid := id.NewRandom()
 	bcid := id.NewRandom()
 	mgr := channel.NewManager(bcid)
-	c := New("localhost:7144", sid, bcid, mgr, 7144)
+	c := New("localhost:7144", sid, bcid, mgr, 7144, 0, 0)
 	c.globalIP = 0xC0A80001 // 192.168.0.1
 
 	const key = "sk_testkey"
@@ -338,7 +338,7 @@ func TestBuildBcst(t *testing.T) {
 
 func TestHandleOleh(t *testing.T) {
 	mgr := channel.NewManager(id.NewRandom())
-	c := New("localhost:7144", id.NewRandom(), id.NewRandom(), mgr, 7144)
+	c := New("localhost:7144", id.NewRandom(), id.NewRandom(), mgr, 7144, 0, 0)
 
 	oleh := pcp.NewParentAtom(pcp.PCPOleh,
 		pcp.NewIntAtom(pcp.PCPHeloRemoteIP, 0x0A000001),
@@ -352,7 +352,7 @@ func TestHandleOleh(t *testing.T) {
 
 func TestHandleOleh_NoRIP(t *testing.T) {
 	mgr := channel.NewManager(id.NewRandom())
-	c := New("localhost:7144", id.NewRandom(), id.NewRandom(), mgr, 7144)
+	c := New("localhost:7144", id.NewRandom(), id.NewRandom(), mgr, 7144, 0, 0)
 
 	oleh := pcp.NewParentAtom(pcp.PCPOleh,
 		pcp.NewStringAtom(pcp.PCPHeloAgent, "test"),
@@ -433,7 +433,7 @@ func TestIPToString(t *testing.T) {
 
 func TestBump_NonBlocking(t *testing.T) {
 	mgr := channel.NewManager(id.NewRandom())
-	c := New("localhost:7144", id.NewRandom(), id.NewRandom(), mgr, 7144)
+	c := New("localhost:7144", id.NewRandom(), id.NewRandom(), mgr, 7144, 0, 0)
 
 	// Bump should not block even if nobody is reading bumpCh
 	c.Bump()
@@ -618,7 +618,7 @@ func TestRun_FullIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	c := New(ln.Addr().String(), sid, bcid, mgr, 8000)
+	c := New(ln.Addr().String(), sid, bcid, mgr, 8000, 0, 0)
 
 	// Server goroutine.
 	var serverWg sync.WaitGroup
@@ -749,7 +749,7 @@ func TestRun_BackoffResetsOnSuccess(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	c := New(ln.Addr().String(), sid, bcid, mgr, 7144)
+	c := New(ln.Addr().String(), sid, bcid, mgr, 7144, 0, 0)
 
 	// Server: accept, complete handshake, then close immediately.
 	// The client's initial sendAllBcst will write to a closed connection
@@ -816,7 +816,7 @@ func TestRun_NoChannels(t *testing.T) {
 	bcid := id.NewRandom()
 	mgr := channel.NewManager(bcid) // no channels
 
-	c := New(ln.Addr().String(), sid, bcid, mgr, 7144)
+	c := New(ln.Addr().String(), sid, bcid, mgr, 7144, 0, 0)
 
 	var serverWg sync.WaitGroup
 	serverWg.Add(1)
@@ -885,7 +885,7 @@ func TestRun_BumpSendsBcst(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	c := New(ln.Addr().String(), sid, bcid, mgr, 7144)
+	c := New(ln.Addr().String(), sid, bcid, mgr, 7144, 0, 0)
 
 	var bcstCount int
 	var mu sync.Mutex
@@ -962,7 +962,7 @@ func TestRun_HandshakeQuit(t *testing.T) {
 	sid := id.NewRandom()
 	bcid := id.NewRandom()
 	mgr := channel.NewManager(bcid)
-	c := New(ln.Addr().String(), sid, bcid, mgr, 7144)
+	c := New(ln.Addr().String(), sid, bcid, mgr, 7144, 0, 0)
 
 	var serverWg sync.WaitGroup
 	serverWg.Add(1)
@@ -998,7 +998,7 @@ func TestRun_HandshakeQuit(t *testing.T) {
 func TestRun_DialFailure(t *testing.T) {
 	mgr := channel.NewManager(id.NewRandom())
 	// Use a port that is not listening.
-	c := New("127.0.0.1:1", id.NewRandom(), id.NewRandom(), mgr, 7144)
+	c := New("127.0.0.1:1", id.NewRandom(), id.NewRandom(), mgr, 7144, 0, 0)
 
 	connected, err := c.run()
 	if connected {
@@ -1023,7 +1023,7 @@ func TestRun_RootInterval(t *testing.T) {
 	sid := id.NewRandom()
 	bcid := id.NewRandom()
 	mgr := channel.NewManager(bcid)
-	c := New(ln.Addr().String(), sid, bcid, mgr, 7144)
+	c := New(ln.Addr().String(), sid, bcid, mgr, 7144, 0, 0)
 
 	var serverWg sync.WaitGroup
 	serverWg.Add(1)

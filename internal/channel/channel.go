@@ -80,7 +80,14 @@ type Channel struct {
 	upstreamSessionID pcp.GnuID
 	upstreamIP        uint32
 	upstreamPort      uint16
+
+	// knownHosts is a bounded cache of Host atoms observed via bcst forwarding.
+	// Used by SelectSourceHosts to hand out alternative relay candidates when
+	// this node has no free relay slots (PeerCastStation 互換: Channel.Nodes).
+	knownHosts []*pcp.Atom
 }
+
+const maxKnownHosts = 32
 
 // New creates a new Channel. bufSize sets the ContentBuffer ring buffer size;
 // if <= 0, DefaultContentBufferSize is used.
@@ -387,6 +394,69 @@ func (c *Channel) CloseAll() {
 // UptimeSeconds returns the number of seconds since the channel started.
 func (c *Channel) UptimeSeconds() uint32 {
 	return uint32(time.Since(c.StartTime).Seconds())
+}
+
+// AddKnownHost records a Host atom observed via bcst forwarding, deduped by
+// the host's session ID. Older entries are evicted when the cache is full.
+func (c *Channel) AddKnownHost(host *pcp.Atom) {
+	if host == nil {
+		return
+	}
+	sidAtom := host.FindChild(pcp.PCPHostID)
+	if sidAtom == nil {
+		return
+	}
+	sid, err := sidAtom.GetID()
+	if err != nil {
+		return
+	}
+	var zero pcp.GnuID
+	if sid == zero || sid == c.sessionIDForKnownHosts() {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	// Replace existing entry for the same sid.
+	for i, h := range c.knownHosts {
+		if existing := h.FindChild(pcp.PCPHostID); existing != nil {
+			if id, err := existing.GetID(); err == nil && id == sid {
+				c.knownHosts[i] = host
+				return
+			}
+		}
+	}
+	if len(c.knownHosts) >= maxKnownHosts {
+		c.knownHosts = c.knownHosts[1:]
+	}
+	c.knownHosts = append(c.knownHosts, host)
+}
+
+// sessionIDForKnownHosts returns a zero id; the channel doesn't know its own
+// session ID directly, so dedup against self is handled by callers.
+func (c *Channel) sessionIDForKnownHosts() pcp.GnuID { return pcp.GnuID{} }
+
+// SelectSourceHosts returns up to max recently observed Host atoms. Used by
+// PCPOutputStream when the relay is full to hand out alternative nodes
+// (PeerCastStation 互換: SelectSourceHosts)。
+func (c *Channel) SelectSourceHosts(max int) []*pcp.Atom {
+	if max <= 0 {
+		return nil
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	n := len(c.knownHosts)
+	if n > max {
+		n = max
+	}
+	if n == 0 {
+		return nil
+	}
+	// Return newest first.
+	out := make([]*pcp.Atom, 0, n)
+	for i := len(c.knownHosts) - 1; i >= 0 && len(out) < n; i-- {
+		out = append(out, c.knownHosts[i])
+	}
+	return out
 }
 
 // Broadcast forwards a bcst atom to all PCP output streams except the sender

@@ -84,7 +84,7 @@ func main() {
 			slog.Error("yp: invalid addr", "addr", ypEntry.Addr, "err", err)
 			os.Exit(1)
 		}
-		ypClient := yp.New(hostPort, sessionID, broadcastID, mgr, cfg.PeercastPort)
+		ypClient := yp.New(hostPort, sessionID, broadcastID, mgr, cfg.PeercastPort, cfg.MaxRelays, cfg.MaxListeners)
 		ypClient.OnGlobalIP = func(ip uint32) {
 			slog.Debug("global IP acquired", "ip", pcp.IPv4FromUint32(ip))
 			globalIP.Store(ip)
