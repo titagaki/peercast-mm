@@ -56,6 +56,7 @@ JSON-RPC 2.0 仕様に準拠する。パラメータは **位置指定配列** (
 |---|---|---|
 | `issueStreamKey` | `[accountName, streamKey]` | `null` |
 | `revokeStreamKey` | `[accountName]` | `null` |
+| `listStreamKeys` | なし | `[{ accountName, streamKey }, ...]` |
 | `broadcastChannel` | `[{ streamKey, info, track }]` | `{ channelId }` |
 | `relayChannel` | `[{ upstreamAddr, channelId }]` | `{ channelId }` |
 | `getVersionInfo` | なし | `{ agentName }` |
@@ -103,6 +104,22 @@ JSON-RPC 2.0 仕様に準拠する。パラメータは **位置指定配列** (
 
 **エラー条件:**
 - `accountName` が未登録 → `-32603`
+
+---
+
+### `listStreamKeys`
+
+**パラメータ:** なし
+
+発行済みのストリームキー一覧を `accountName` の昇順で返す。
+
+**返却値:**
+```json
+[
+  { "accountName": "alice", "streamKey": "sk_a1b2c3..." },
+  { "accountName": "bob",   "streamKey": "sk_d4e5f6..." }
+]
+```
 
 ---
 

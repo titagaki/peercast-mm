@@ -142,6 +142,19 @@ func (s *Server) issueStreamKey(params json.RawMessage) (interface{}, *rpcError)
 	return nil, nil
 }
 
+func (s *Server) listStreamKeys() (interface{}, *rpcError) {
+	type entry struct {
+		AccountName string `json:"accountName"`
+		StreamKey   string `json:"streamKey"`
+	}
+	src := s.mgr.ListStreamKeys()
+	out := make([]entry, len(src))
+	for i, e := range src {
+		out[i] = entry{AccountName: e.AccountName, StreamKey: e.StreamKey}
+	}
+	return out, nil
+}
+
 func (s *Server) revokeStreamKey(params json.RawMessage) (interface{}, *rpcError) {
 	var args []string
 	if err := json.Unmarshal(params, &args); err != nil || len(args) < 1 {

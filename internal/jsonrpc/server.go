@@ -23,6 +23,7 @@ type YPBumper interface {
 type ChannelManager interface {
 	IssueStreamKey(accountName, streamKey string) error
 	RevokeStreamKey(accountName string) bool
+	ListStreamKeys() []channel.StreamKeyEntry
 	Broadcast(streamKey string, info channel.ChannelInfo, track channel.TrackInfo) (*channel.Channel, error)
 	Stop(channelID pcp.GnuID) bool
 	GetByID(channelID pcp.GnuID) (*channel.Channel, bool)
@@ -163,6 +164,8 @@ func (s *Server) dispatch(method string, params json.RawMessage) (interface{}, *
 		return s.issueStreamKey(params)
 	case "revokeStreamKey":
 		return s.revokeStreamKey(params)
+	case "listStreamKeys":
+		return s.listStreamKeys()
 	case "broadcastChannel":
 		return s.broadcastChannel(params)
 	case "getChannels":

@@ -76,6 +76,9 @@ func (m *Manager) RevokeStreamKey(accountName string) bool {
 // IsIssuedKey reports whether the given stream key has been issued.
 func (m *Manager) IsIssuedKey(key string) bool { return m.keys.IsIssuedKey(key) }
 
+// ListStreamKeys returns all issued stream keys, sorted by account name.
+func (m *Manager) ListStreamKeys() []StreamKeyEntry { return m.keys.List() }
+
 // Broadcast starts a new channel for the given stream key.
 //
 // Returns an error if:

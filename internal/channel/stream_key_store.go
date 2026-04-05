@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sort"
 	"sync"
 )
 
@@ -124,4 +125,24 @@ func (s *StreamKeyStore) IsIssuedKey(key string) bool {
 	defer s.mu.RUnlock()
 	_, ok := s.streamKeys[key]
 	return ok
+}
+
+// StreamKeyEntry is a single accountName → streamKey mapping.
+type StreamKeyEntry struct {
+	AccountName string
+	StreamKey   string
+}
+
+// List returns all issued stream keys, sorted by account name.
+func (s *StreamKeyStore) List() []StreamKeyEntry {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	entries := make([]StreamKeyEntry, 0, len(s.accounts))
+	for name, key := range s.accounts {
+		entries = append(entries, StreamKeyEntry{AccountName: name, StreamKey: key})
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].AccountName < entries[j].AccountName
+	})
+	return entries
 }

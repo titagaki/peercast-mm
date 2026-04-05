@@ -1,0 +1,158 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+body {
+  margin: 0;
+}
+
+.app {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.app-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-bottom: 1px solid #ccc3;
+  padding-bottom: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.app-nav h1 {
+  font-size: 1.1rem;
+  margin: 0 1rem 0 0;
+}
+
+.app-nav button {
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 0.4rem 0.8rem;
+  cursor: pointer;
+  border-radius: 4px;
+  color: inherit;
+}
+
+.app-nav button.active {
+  border-color: #6aa;
+  background: #6aa2;
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.page-header h2 {
+  margin: 0;
+}
+
+.error {
+  background: #fee;
+  color: #900;
+  border: 1px solid #f99;
+  padding: 0.5rem 0.75rem;
+  border-radius: 4px;
+  margin-bottom: 1rem;
+}
+
+.issue-form {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.issue-form input {
+  padding: 0.4rem 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-family: inherit;
+}
+
+.issue-form input[type="text"]:nth-child(2) {
+  flex: 1;
+  font-family: ui-monospace, monospace;
+  font-size: 0.85em;
+}
+
+.issue-form button {
+  padding: 0.4rem 0.8rem;
+  cursor: pointer;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.data-table th,
+.data-table td {
+  text-align: left;
+  padding: 0.5rem;
+  border-bottom: 1px solid #ccc3;
+}
+
+.data-table th {
+  font-weight: 600;
+  background: #0001;
+}
+
+.data-table tbody tr {
+  cursor: pointer;
+}
+
+.data-table tbody tr:hover {
+  background: #6aa1;
+}
+
+.data-table tbody tr.selected {
+  background: #6aa3;
+}
+
+.data-table .empty {
+  text-align: center;
+  color: #888;
+  padding: 2rem;
+  cursor: default;
+}
+
+.mono {
+  font-family: ui-monospace, monospace;
+  font-size: 0.85em;
+}
+
+.detail-panel {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  border: 1px solid #ccc3;
+  border-radius: 4px;
+  background: #0001;
+}
+
+.detail-panel h3 {
+  margin: 0 0 0.75rem 0;
+  font-size: 1rem;
+}
+
+.detail-panel dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 1rem;
+  margin: 0;
+}
+
+.detail-panel dt {
+  font-weight: 600;
+  color: #888;
+}
+
+.detail-panel dd {
+  margin: 0;
+  word-break: break-all;
+}
