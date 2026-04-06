@@ -127,12 +127,30 @@ body {
   font-size: 0.85em;
 }
 
-.broadcast-form {
+.broadcast-dialog {
   border: 1px solid #ccc3;
-  border-radius: 4px;
-  padding: 1rem;
-  margin-bottom: 1rem;
-  background: #0001;
+  border-radius: 8px;
+  padding: 1.25rem;
+  max-width: 480px;
+  width: 100%;
+  background: var(--dialog-bg, #fff);
+  color: inherit;
+  margin-top: 5vh;
+}
+
+.broadcast-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.broadcast-dialog h3 {
+  margin: 0 0 1rem 0;
+  font-size: 1.1rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  .broadcast-dialog {
+    --dialog-bg: #1e1e1e;
+  }
 }
 
 .broadcast-form-grid {
@@ -171,8 +189,15 @@ body {
   background: #0001;
 }
 
+.detail-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
 .detail-panel h3 {
-  margin: 0 0 0.75rem 0;
+  margin: 0;
   font-size: 1rem;
 }
 

@@ -123,7 +123,26 @@ export type BroadcastParam = {
 export const broadcastChannel = (param: BroadcastParam) =>
   rpc<{ channelId: string }>("broadcastChannel", [param]);
 
+export type RelayTreeNode = {
+  sessionId: string;
+  address: string;
+  port: number;
+  isFirewalled: boolean;
+  localRelays: number;
+  localDirects: number;
+  isTracker: boolean;
+  isRelayFull: boolean;
+  isDirectFull: boolean;
+  isReceiving: boolean;
+  isControlFull: boolean;
+  version: number;
+  versionString: string;
+  children: RelayTreeNode[];
+};
+
 export const getChannels = () => rpc<ChannelEntry[]>("getChannels");
+export const getChannelRelayTree = (channelId: string) =>
+  rpc<RelayTreeNode[]>("getChannelRelayTree", [channelId]);
 export const stopChannel = (channelId: string) =>
   rpc<null>("stopChannel", [channelId]);
 export const bumpChannel = (channelId: string) =>
