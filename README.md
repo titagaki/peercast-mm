@@ -1,8 +1,11 @@
 # peercast-mi
 
-Go 製 PeerCast ノード。**ブロードキャストノード**（RTMP → PCP）と**リレーノード**（上流 PeerCast ノードから受け取って中継）の両方に対応する。
+Go 製 PeerCast ノード。Root モード以外（ブロードキャスト・リレー）に対応。
 
-複数チャンネルを同時に扱える。チャンネルは起動時ではなく JSON-RPC API で動的に作成する。
+- Go 製でマルチプラットフォーム（Linux / macOS / Windows）
+- RTMP → PCP のブロードキャスト配信
+- ストリームキーによる RTMP 接続の認証
+- JSON-RPC API / Web UI によるチャンネル管理
 
 ## 必要なもの
 
