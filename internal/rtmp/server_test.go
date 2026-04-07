@@ -6,6 +6,7 @@ import (
 	"io"
 	"testing"
 
+	goamf0 "github.com/yutopp/go-amf0"
 	"github.com/yutopp/go-rtmp/message"
 
 	"github.com/titagaki/peercast-mi/internal/channel"
@@ -451,3 +452,115 @@ func TestOnAudio_ReadError(t *testing.T) {
 type errReader struct{}
 
 func (errReader) Read([]byte) (int, error) { return 0, io.ErrUnexpectedEOF }
+
+// helpers for onMetaData tests --------------------------------------------
+
+func encodeOnMetaData(videodatarate, audiodatarate float64) []byte {
+	var buf bytes.Buffer
+	enc := goamf0.NewEncoder(&buf)
+	enc.Encode("onMetaData")
+	enc.Encode(goamf0.ECMAArray{
+		"videodatarate": videodatarate,
+		"audiodatarate": audiodatarate,
+	})
+	return buf.Bytes()
+}
+
+// -----------------------------------------------------------------------
+// applyMetaInfo — bitrate extraction
+// -----------------------------------------------------------------------
+
+func TestApplyMetaInfo_UpdatesBitrate(t *testing.T) {
+	h, _, ch := setupHandler(t)
+
+	payload := encodeOnMetaData(2500, 160)
+	data := &message.NetStreamSetDataFrame{Payload: payload}
+	if err := h.OnSetDataFrame(0, data); err != nil {
+		t.Fatal(err)
+	}
+
+	info := ch.Info()
+	if info.Bitrate != 2660 {
+		t.Fatalf("bitrate: got %d, want 2660", info.Bitrate)
+	}
+}
+
+func TestApplyMetaInfo_DeferredUntilChannelExists(t *testing.T) {
+	mgr := channel.NewManager(id.NewRandom())
+	const key = "sk_testkey"
+	if err := mgr.IssueStreamKey("test-account", key); err != nil {
+		t.Fatal(err)
+	}
+	h := newHandler(mgr, "127.0.0.1:9999")
+	h.streamKey = key
+
+	// Send onMetaData BEFORE broadcastChannel — channel does not exist yet.
+	payload := encodeOnMetaData(3000, 128)
+	data := &message.NetStreamSetDataFrame{Payload: payload}
+	if err := h.OnSetDataFrame(0, data); err != nil {
+		t.Fatal(err)
+	}
+
+	// Now create the channel.
+	info := channel.ChannelInfo{Name: "test", Genre: "test", Type: "FLV", MIMEType: "video/x-flv", Ext: ".flv"}
+	ch, err := mgr.Broadcast(key, info, channel.TrackInfo{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Bitrate should still be 0 — not applied yet.
+	if ch.Info().Bitrate != 0 {
+		t.Fatalf("bitrate should be 0 before deferred apply, got %d", ch.Info().Bitrate)
+	}
+
+	// Trigger deferred apply via writeData (simulates first video frame).
+	tag := makeFLVTag(9, 100, []byte{0x17, 0x01, 0xAA})
+	h.writeData(tag, 0)
+
+	if ch.Info().Bitrate != 3128 {
+		t.Fatalf("bitrate after deferred apply: got %d, want 3128", ch.Info().Bitrate)
+	}
+}
+
+func TestApplyMetaInfo_MaxBitrate(t *testing.T) {
+	h, _, ch := setupHandler(t)
+
+	// OBS may set maxBitrate instead of videodatarate.
+	var buf bytes.Buffer
+	enc := goamf0.NewEncoder(&buf)
+	enc.Encode("onMetaData")
+	enc.Encode(goamf0.ECMAArray{
+		"maxBitrate":    "5000k",
+		"videodatarate": float64(0),
+		"audiodatarate": float64(160),
+	})
+	data := &message.NetStreamSetDataFrame{Payload: buf.Bytes()}
+	if err := h.OnSetDataFrame(0, data); err != nil {
+		t.Fatal(err)
+	}
+
+	if ch.Info().Bitrate != 5160 {
+		t.Fatalf("bitrate: got %d, want 5160", ch.Info().Bitrate)
+	}
+}
+
+func TestApplyMetaInfo_MaxBitrateNumeric(t *testing.T) {
+	h, _, ch := setupHandler(t)
+
+	var buf bytes.Buffer
+	enc := goamf0.NewEncoder(&buf)
+	enc.Encode("onMetaData")
+	enc.Encode(goamf0.ECMAArray{
+		"maxBitrate":    float64(4000),
+		"videodatarate": float64(0),
+		"audiodatarate": float64(128),
+	})
+	data := &message.NetStreamSetDataFrame{Payload: buf.Bytes()}
+	if err := h.OnSetDataFrame(0, data); err != nil {
+		t.Fatal(err)
+	}
+
+	if ch.Info().Bitrate != 4128 {
+		t.Fatalf("bitrate: got %d, want 4128", ch.Info().Bitrate)
+	}
+}

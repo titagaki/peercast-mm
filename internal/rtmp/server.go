@@ -7,6 +7,8 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"regexp"
+	"strconv"
 
 	goamf0 "github.com/yutopp/go-amf0"
 	gortmp "github.com/yutopp/go-rtmp"
@@ -91,6 +93,9 @@ type handler struct {
 	aacTag     []byte // AAC sequence header FLV tag (timestamp zeroed)
 	headerSent bool   // true once the first complete header has been built
 
+	metaPayload []byte // raw AMF0 payload from onMetaData (for deferred info update)
+	infoApplied bool   // true once metadata info has been applied to the channel
+
 	streamPos uint32 // running byte position counter
 }
 
@@ -127,7 +132,8 @@ func (h *handler) OnPublish(_ *gortmp.StreamContext, _ uint32, cmd *message.NetS
 func (h *handler) OnSetDataFrame(timestamp uint32, data *message.NetStreamSetDataFrame) error {
 	// data.Payload is the raw AMF0 bytes: "onMetaData" string + object.
 	h.metaTag = makeFLVTag(18, 0, data.Payload)
-	h.maybeUpdateInfo(data)
+	h.metaPayload = append([]byte(nil), data.Payload...)
+	h.applyMetaInfo()
 	h.rebuildHeader()
 	return nil
 }
@@ -202,6 +208,9 @@ func (h *handler) rebuildHeader() {
 	if h.avcTag == nil && h.aacTag == nil {
 		return
 	}
+	// Retry deferred metadata info update (covers the case where
+	// OnSetDataFrame arrived before broadcastChannel created the channel).
+	h.applyMetaInfo()
 	ch := h.ch()
 	if ch == nil {
 		return
@@ -246,6 +255,7 @@ func (h *handler) rebuildHeader() {
 }
 
 func (h *handler) writeData(tag []byte, contFlags byte) {
+	h.applyMetaInfo()
 	ch := h.ch()
 	if ch == nil {
 		return
@@ -300,14 +310,18 @@ func appendFLVTagWithBackPointer(buf, tag []byte) []byte {
 // AMF0 helpers
 // ---------------------------------------------------------------------------
 
-// maybeUpdateInfo extracts bitrate from onMetaData payload and updates the channel.
-// Silently dropped if no active channel exists for the stream key yet.
-func (h *handler) maybeUpdateInfo(data *message.NetStreamSetDataFrame) {
+// applyMetaInfo extracts bitrate from the saved onMetaData payload and updates
+// the channel. It is called from OnSetDataFrame and retried from rebuildHeader
+// so that metadata arriving before broadcastChannel is not lost.
+func (h *handler) applyMetaInfo() {
+	if h.infoApplied || len(h.metaPayload) == 0 {
+		return
+	}
 	ch := h.ch()
 	if ch == nil {
 		return
 	}
-	dec := goamf0.NewDecoder(bytes.NewReader(data.Payload))
+	dec := goamf0.NewDecoder(bytes.NewReader(h.metaPayload))
 
 	// Skip the "onMetaData" string.
 	var name string
@@ -332,7 +346,12 @@ func (h *handler) maybeUpdateInfo(data *message.NetStreamSetDataFrame) {
 
 	info := ch.Info()
 
-	if v, ok := m["videodatarate"]; ok {
+	// Extract video bitrate: prefer maxBitrate (OBS sets this instead of
+	// videodatarate in some configurations), fall back to videodatarate.
+	// PeerCastStation uses the same priority order.
+	if br, ok := parseMaxBitrate(m["maxBitrate"]); ok {
+		info.Bitrate = uint32(br)
+	} else if v, ok := m["videodatarate"]; ok {
 		if f, ok := v.(float64); ok {
 			info.Bitrate = uint32(f)
 		}
@@ -349,4 +368,28 @@ func (h *handler) maybeUpdateInfo(data *message.NetStreamSetDataFrame) {
 	}
 
 	ch.SetInfo(info)
+	h.infoApplied = true
+}
+
+var reKbpsSuffix = regexp.MustCompile(`(\d+)k`)
+
+// parseMaxBitrate parses the maxBitrate AMF value. OBS may set this as a
+// number or a string like "5000k". Returns the bitrate in kbps and true
+// if a valid value was found.
+func parseMaxBitrate(v interface{}) (float64, bool) {
+	if v == nil {
+		return 0, false
+	}
+	switch val := v.(type) {
+	case float64:
+		if val > 0 {
+			return val, true
+		}
+	case string:
+		s := reKbpsSuffix.ReplaceAllString(val, "$1")
+		if f, err := strconv.ParseFloat(s, 64); err == nil && f > 0 {
+			return f, true
+		}
+	}
+	return 0, false
 }
