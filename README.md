@@ -166,21 +166,4 @@ peercast-mi はポート 7144 で待ち受ける。
 
 ## JSON-RPC API
 
-詳細仕様は [docs/api/jsonrpc.md](docs/api/jsonrpc.md) を参照。
-
-| メソッド | 説明 |
-|---|---|
-| `issueStreamKey` | ストリームキーを発行する |
-| `broadcastChannel` | ブロードキャストチャンネルを開始する |
-| `getChannels` | チャンネルの一覧 |
-| `getChannelInfo` | チャンネル情報を取得 |
-| `getChannelStatus` | チャンネルステータスを取得 |
-| `setChannelInfo` | チャンネル情報を更新 |
-| `stopChannel` | チャンネルを停止 |
-| `bumpChannel` | YP への bcst を即時送信 |
-| `getChannelConnections` | 接続一覧を取得 |
-| `stopChannelConnection` | 特定の接続を切断 |
-| `getYellowPages` | YP 一覧を取得 |
-| `getChannelRelayTree` | リレーツリーを取得 |
-| `getVersionInfo` | エージェント名を取得 |
-| `getSettings` | ポート設定を取得 |
+メソッド一覧・パラメータ・返却値の詳細は [docs/api/jsonrpc.md](docs/api/jsonrpc.md) を参照。
