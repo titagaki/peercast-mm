@@ -6,6 +6,7 @@ import {
   getChannelRelayTree,
   getChannels,
   listStreamKeys,
+  setChannelInfo,
   stopChannel,
   stopChannelConnection,
   type ChannelConnection,
@@ -186,6 +187,92 @@ function BroadcastDialog({
   );
 }
 
+function EditChannelDialog({
+  entry,
+  onUpdated,
+}: {
+  entry: ChannelEntry;
+  onUpdated: () => void;
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const [name, setName] = useState("");
+  const [genre, setGenre] = useState("");
+  const [desc, setDesc] = useState("");
+  const [comment, setComment] = useState("");
+  const [url, setUrl] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const openDialog = () => {
+    setName(entry.info.name);
+    setGenre(entry.info.genre);
+    setDesc(entry.info.desc);
+    setComment(entry.info.comment);
+    setUrl(entry.info.url);
+    setError(null);
+    dialogRef.current?.showModal();
+  };
+
+  const closeDialog = () => {
+    dialogRef.current?.close();
+  };
+
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    try {
+      await setChannelInfo(entry.channelId, {
+        info: { name, genre, url, desc, comment },
+      });
+      closeDialog();
+      onUpdated();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <>
+      <button onClick={openDialog}>Edit</button>
+      <dialog ref={dialogRef} className="broadcast-dialog">
+        <form onSubmit={onSubmit}>
+          <h3>Edit Channel Info</h3>
+          <div className="broadcast-form-grid">
+            <label>Name</label>
+            <input type="text" value={name} onChange={(e) => setName(e.target.value)} required />
+
+            <label>Genre</label>
+            <input type="text" value={genre} onChange={(e) => setGenre(e.target.value)} />
+
+            <label>Description</label>
+            <input type="text" value={desc} onChange={(e) => setDesc(e.target.value)} />
+
+            <label>Comment</label>
+            <input type="text" value={comment} onChange={(e) => setComment(e.target.value)} />
+
+            <label>URL</label>
+            <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} />
+          </div>
+
+          {error && <div className="error">{error}</div>}
+
+          <div className="broadcast-form-actions">
+            <button type="submit" disabled={submitting}>
+              {submitting ? "Saving..." : "Save"}
+            </button>
+            <button type="button" onClick={closeDialog}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      </dialog>
+    </>
+  );
+}
+
 export function ChannelsPage() {
   const [entries, setEntries] = useState<ChannelEntry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -289,65 +376,88 @@ export function ChannelsPage() {
 
       {error && <div className="error">{error}</div>}
 
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Status</th>
-            <th>Type</th>
-            <th>Bitrate</th>
-            <th>Listeners</th>
-            <th>Relays</th>
-            <th>Uptime</th>
-            <th></th>
+      {(() => {
+        const broadcasting = entries.filter((c) => c.status.isBroadcasting);
+        const relay = entries.filter((c) => !c.status.isBroadcasting);
+
+        const renderRow = (c: ChannelEntry) => (
+          <tr
+            key={c.channelId}
+            onClick={() => setSelectedId(c.channelId)}
+            className={c.channelId === selectedId ? "selected" : ""}
+          >
+            <td>
+              {c.info.name || "(unnamed)"}
+              <span className="badge">{c.status.isBroadcasting ? "Broadcasting" : "Relay"}</span>
+            </td>
+            <td>{c.status.status}</td>
+            <td>{c.info.contentType}</td>
+            <td>{c.info.bitrate} kbps</td>
+            <td>
+              {c.status.localDirects} / {c.status.totalDirects}
+            </td>
+            <td>
+              {c.status.localRelays} / {c.status.totalRelays}
+            </td>
+            <td>{formatUptime(c.status.uptime)}</td>
+            <td onClick={(e) => e.stopPropagation()}>
+              <button onClick={() => onBump(c.channelId)}>Bump</button>{" "}
+              <button onClick={() => onStop(c.channelId)}>Stop</button>
+            </td>
           </tr>
-        </thead>
-        <tbody>
-          {entries.length === 0 && !loading && (
-            <tr>
-              <td colSpan={8} className="empty">
-                No channels.
-              </td>
-            </tr>
-          )}
-          {entries.map((c) => (
-            <tr
-              key={c.channelId}
-              onClick={() => setSelectedId(c.channelId)}
-              className={c.channelId === selectedId ? "selected" : ""}
-            >
-              <td>{c.info.name || "(unnamed)"}</td>
-              <td>
-                {c.status.status}
-                {c.status.isBroadcasting ? " / broadcasting" : ""}
-              </td>
-              <td>{c.info.contentType}</td>
-              <td>{c.info.bitrate} kbps</td>
-              <td>
-                {c.status.localDirects} / {c.status.totalDirects}
-              </td>
-              <td>
-                {c.status.localRelays} / {c.status.totalRelays}
-              </td>
-              <td>{formatUptime(c.status.uptime)}</td>
-              <td onClick={(e) => e.stopPropagation()}>
-                <button onClick={() => onBump(c.channelId)}>Bump</button>{" "}
-                <button onClick={() => onStop(c.channelId)}>Stop</button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+        );
+
+        return (
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Status</th>
+                <th>Type</th>
+                <th>Bitrate</th>
+                <th>Listeners</th>
+                <th>Relays</th>
+                <th>Uptime</th>
+                <th></th>
+              </tr>
+            </thead>
+            {entries.length === 0 && !loading && (
+              <tbody>
+                <tr>
+                  <td colSpan={8} className="empty">
+                    No channels.
+                  </td>
+                </tr>
+              </tbody>
+            )}
+            {broadcasting.length > 0 && (
+              <tbody>
+                <tr className="group-header"><td colSpan={8}>Broadcasting</td></tr>
+                {broadcasting.map(renderRow)}
+              </tbody>
+            )}
+            {relay.length > 0 && (
+              <tbody>
+                <tr className="group-header"><td colSpan={8}>Relay</td></tr>
+                {relay.map(renderRow)}
+              </tbody>
+            )}
+          </table>
+        );
+      })()}
 
       {selected && (
         <div className="detail-panel">
           <header className="detail-panel-header">
             <h3>Detail</h3>
-            <button onClick={() => {
-              void reload();
-              void reloadConnections(selected.channelId);
-              void reloadRelayTree(selected.channelId);
-            }}>Reload</button>
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              {selected.status.isBroadcasting && <EditChannelDialog entry={selected} onUpdated={reload} />}
+              <button onClick={() => {
+                void reload();
+                void reloadConnections(selected.channelId);
+                void reloadRelayTree(selected.channelId);
+              }}>Reload</button>
+            </div>
           </header>
           <dl>
             <dt>Channel ID</dt>

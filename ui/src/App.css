@@ -190,6 +190,31 @@ body {
   gap: 0.5rem;
 }
 
+.badge {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.1rem 0.4rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  border: 1px solid #ccc6;
+  border-radius: 3px;
+  color: #888;
+  vertical-align: middle;
+}
+
+.group-header td {
+  font-weight: 600;
+  font-size: 0.8rem;
+  color: #888;
+  padding: 0.75rem 0.5rem 0.25rem;
+  border-bottom: none;
+  cursor: default;
+}
+
+.group-header:hover {
+  background: transparent !important;
+}
+
 .detail-panel {
   margin-top: 1.5rem;
   padding: 1rem;

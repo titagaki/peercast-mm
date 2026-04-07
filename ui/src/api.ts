@@ -171,3 +171,23 @@ export const getChannelConnections = (channelId: string) =>
   rpc<ChannelConnection[]>("getChannelConnections", [channelId]);
 export const stopChannelConnection = (channelId: string, connectionId: number) =>
   rpc<boolean>("stopChannelConnection", [channelId, connectionId]);
+
+export type SetChannelInfoParam = {
+  info: {
+    name: string;
+    genre?: string;
+    url?: string;
+    desc?: string;
+    comment?: string;
+    bitrate?: number;
+  };
+  track?: {
+    title?: string;
+    creator?: string;
+    album?: string;
+    url?: string;
+  };
+};
+
+export const setChannelInfo = (channelId: string, param: SetChannelInfoParam) =>
+  rpc<null>("setChannelInfo", [channelId, param.info, param.track ?? {}]);
